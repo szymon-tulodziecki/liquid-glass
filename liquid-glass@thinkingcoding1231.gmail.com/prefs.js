@@ -159,6 +159,7 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
     const menuBlurRow = this._addSliderRow(menuGroup, settings, 'menu-blur-radius', 'Blur Radius', '', 0, 30, 1);
     blurRadiusRows.push(menuBlurRow);
     this._addSliderRow(menuGroup, settings, 'menu-corner-radius', 'Corner Radius', 'Roundness of the corners', 0, 200, 1);
+    this._addSliderRow(menuGroup, settings, 'menu-scale', 'Menu Scale', 'Shrink or grow the whole menu, glass included', 0.5, 1.0, 0.01);
 
     // Advancedグループ (開閉可能) - Spring関連とカラー調整をここに集約
     const menuAdvanced = new Adw.ExpanderRow({

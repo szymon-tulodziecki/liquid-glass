@@ -7,7 +7,7 @@ import Meta from 'gi://Meta';
 import Gio from 'gi://Gio';
 import { LiquidEffect } from './liquidEffect.js';
 import { StageContrastSampler, AdaptiveContrastConfig } from './contrastSampler.js';
-import { UnpickableActor, UILayerSampler, UnpickableWidget, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated, resolveMonitorGeometry } from './utils.js';
+import { UnpickableActor, UILayerSampler, UnpickableWidget, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated, resolveMonitorGeometry, isActorValid } from './utils.js';
 // ========== Configuration Parameters ==========
 // Transparent padding outside the glass area.
 // This prevents the shader distortion or rounded corners from being clipped by the actor bounds.
@@ -15,6 +15,7 @@ const SHADER_PADDING = 20;
 // Adaptive text color flags
 const SAMPLE_PER_ELEMENT = false;
 // ==============================================
+const MIN_MENU_SCALE = 0.5;
 export class UIManager {
     extensionPath;
     _settings;
@@ -32,6 +33,7 @@ export class UIManager {
     _glassExpand;
     _menuXoffset;
     _menuYoffset;
+    _menuScale = 1.0;
     _tickId;
     _contrastSampler;
     _adaptiveTimerId;
@@ -106,6 +108,7 @@ export class UIManager {
         // Listen for the menu opening/closing to trigger our custom physics animation
         this._animSignalId = this.menu.connect('open-state-changed', (menu, isOpen) => {
             if (isOpen) {
+                this._applyMenuScale();
                 this._startAnimation(1); // Target scale: 1.0 (fully open)
             }
             else {
@@ -118,6 +121,8 @@ export class UIManager {
             return;
         this._bindSettings();
         this._enableAnimation = this._settings.get_boolean('enable-menu-animation');
+        this._menuScale = this._settings.get_double('menu-scale');
+        this._applyMenuScale();
         this._springStiffness = this._settings.get_double('menu-spring-stiffness');
         this._springDamping = this._settings.get_double('menu-spring-damping');
         this._springMass = this._settings.get_double('menu-spring-mass');
@@ -191,6 +196,15 @@ export class UIManager {
         let g = parseInt(hex.slice(3, 5), 16) / 255.0;
         let b = parseInt(hex.slice(5, 7), 16) / 255.0;
         return [r, g, b];
+    }
+    _applyMenuScale() {
+        if (!this.targetActor || !isActorValid(this.targetActor))
+            return;
+        const scale = Number.isFinite(this._menuScale)
+            ? Math.min(1.0, Math.max(MIN_MENU_SCALE, this._menuScale))
+            : 1.0;
+        this.targetActor.set_pivot_point(0.5, 0.0);
+        this.targetActor.set_scale(scale, scale);
     }
     _getMenuMonitorGeometry() {
         return resolveMonitorGeometry([this.menu?.sourceActor, this.targetActor]);
@@ -277,6 +291,10 @@ export class UIManager {
                 this._menuXoffset = this._settings.get_int('menu-x-offset');
                 this.animActor.translation_x = this._menuXoffset;
             }
+        });
+        connectSetting('menu-scale', () => {
+            this._menuScale = this._settings.get_double('menu-scale');
+            this._applyMenuScale();
         });
         connectSetting('menu-y-offset', () => {
             if (this.animActor) {
