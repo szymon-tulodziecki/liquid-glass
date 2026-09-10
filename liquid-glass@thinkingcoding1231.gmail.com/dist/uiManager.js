@@ -7,7 +7,7 @@ import Meta from 'gi://Meta';
 import Gio from 'gi://Gio';
 import { LiquidEffect } from './liquidEffect.js';
 import { StageContrastSampler, AdaptiveContrastConfig } from './contrastSampler.js';
-import { UnpickableActor, UILayerSampler, UnpickableWidget, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated } from './utils.js';
+import { UnpickableActor, UILayerSampler, UnpickableWidget, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated, resolveMonitorGeometry } from './utils.js';
 // ========== Configuration Parameters ==========
 // Transparent padding outside the glass area.
 // This prevents the shader distortion or rounded corners from being clipped by the actor bounds.
@@ -193,11 +193,7 @@ export class UIManager {
         return [r, g, b];
     }
     _getMenuMonitorGeometry() {
-        let monitorIndex = Main.layoutManager.findIndexForActor(this.targetActor);
-        if (monitorIndex < 0) {
-            monitorIndex = Main.layoutManager.primaryIndex;
-        }
-        return Main.layoutManager.monitors[monitorIndex] || Main.layoutManager.primaryMonitor;
+        return resolveMonitorGeometry([this.menu?.sourceActor, this.targetActor]);
     }
     // 設定の動的反映
     _bindSettings() {

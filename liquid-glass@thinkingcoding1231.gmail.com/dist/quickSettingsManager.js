@@ -6,7 +6,7 @@ import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 import { LiquidEffect } from './liquidEffect.js';
 import { StageContrastSampler, AdaptiveContrastConfig } from './contrastSampler.js';
-import { UnpickableActor, UILayerSampler, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated, isActorValid, LayoutOpaqueActor, UnpickableStyledWidget, getAllocatedSize, getTransformedRect, } from './utils.js';
+import { UnpickableActor, UILayerSampler, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated, isActorValid, resolveMonitorGeometry, LayoutOpaqueActor, UnpickableStyledWidget, getAllocatedSize, getTransformedRect, } from './utils.js';
 // ========== Configuration Parameters ==========
 // Transparent padding outside the glass area.
 // This prevents the shader distortion or rounded corners from being clipped by the actor bounds.
@@ -234,10 +234,7 @@ export class QuickSettingsManager {
         return [r, g, b];
     }
     _getMenuMonitorGeometry() {
-        let monitorIndex = Main.layoutManager.findIndexForActor(this.targetActor);
-        if (monitorIndex < 0)
-            monitorIndex = Main.layoutManager.primaryIndex;
-        return Main.layoutManager.monitors[monitorIndex] || Main.layoutManager.primaryMonitor;
+        return resolveMonitorGeometry([this.menu?.sourceActor, this.targetActor]);
     }
     _applyMenuOffsets() {
         if (!this.targetActor)

@@ -7,7 +7,7 @@ import Meta from 'gi://Meta';
 import Gio from 'gi://Gio';
 import { LiquidEffect } from './liquidEffect.js';
 import { StageContrastSampler, AdaptiveContrastConfig } from './contrastSampler.js';
-import { UnpickableActor, UILayerSampler, UnpickableWidget, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated } from './utils.js';
+import { UnpickableActor, UILayerSampler, UnpickableWidget, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated, resolveMonitorGeometry } from './utils.js';
 
 import { Logger } from './logger.js';
 
@@ -243,13 +243,9 @@ export class UIManager {
   }
 
   _getMenuMonitorGeometry() {
-    let monitorIndex = Main.layoutManager.findIndexForActor(this.targetActor);
-    if (monitorIndex < 0) {
-      monitorIndex = Main.layoutManager.primaryIndex;
-    }
-
-    return Main.layoutManager.monitors[monitorIndex] || Main.layoutManager.primaryMonitor;
+    return resolveMonitorGeometry([this.menu?.sourceActor, this.targetActor]);
   }
+
 
   // 設定の動的反映
   _bindSettings() {

@@ -15,6 +15,7 @@ import {
   reportFrameLoopError,
   ensureGlassAllocated,
   isActorValid,
+  resolveMonitorGeometry,
   LayoutOpaqueActor,
   UnpickableStyledWidget,
   getAllocatedSize,
@@ -323,10 +324,9 @@ export class QuickSettingsManager {
   }
 
   _getMenuMonitorGeometry() {
-    let monitorIndex = Main.layoutManager.findIndexForActor(this.targetActor);
-    if (monitorIndex < 0) monitorIndex = Main.layoutManager.primaryIndex;
-    return Main.layoutManager.monitors[monitorIndex] || Main.layoutManager.primaryMonitor;
+    return resolveMonitorGeometry([this.menu?.sourceActor, this.targetActor]);
   }
+
 
   _applyMenuOffsets() {
     if (!this.targetActor) return;
