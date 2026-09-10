@@ -160,6 +160,16 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
     blurRadiusRows.push(menuBlurRow);
     this._addSliderRow(menuGroup, settings, 'menu-corner-radius', 'Corner Radius', 'Roundness of the corners', 0, 200, 1);
     this._addSwitchRow(menuGroup, settings, 'menu-match-quick-settings-height', 'Match Quick Settings Height', 'Scale the menu so both panel dropdowns open to the same height');
+
+    const detectedMenus = settings.get_strv('detected-extra-menus');
+    const optionalMenus = [
+      { name: 'keyboard', key: 'enable-keyboard-menu-glass', title: 'Keyboard Layout Menu', subtitle: 'Apply this glass to the input source menu' },
+      { name: 'vitalsMenu', key: 'enable-vitals-menu-glass', title: 'Vitals Menu', subtitle: 'Apply this glass to the Vitals extension menu' },
+    ];
+    for (const menu of optionalMenus) {
+      if (detectedMenus.includes(menu.name))
+        this._addSwitchRow(menuGroup, settings, menu.key, menu.title, menu.subtitle);
+    }
     const menuScaleRow = this._addSliderRow(menuGroup, settings, 'menu-scale', 'Menu Scale', 'Shrink or grow the whole menu, glass included', 0.5, 1.0, 0.01);
     settings.bind('menu-match-quick-settings-height', menuScaleRow, 'sensitive', Gio.SettingsBindFlags.GET | Gio.SettingsBindFlags.INVERT_BOOLEAN);
 
