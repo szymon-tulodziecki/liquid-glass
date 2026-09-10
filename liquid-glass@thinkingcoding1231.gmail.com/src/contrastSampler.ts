@@ -4,6 +4,8 @@ import GdkPixbuf from 'gi://GdkPixbuf';
 import Gio from 'gi://Gio';
 import Clutter from 'gi://Clutter';
 
+const HYSTERESIS_MARGIN = 0.05;
+
 export const AdaptiveContrastConfig = {
   enabled: true,
   samplePerElement: false, // 要素ごとにサンプリングするか、全体をまとめてサンプリングするか　負荷を考慮してデフォルトはまとめてサンプリング
@@ -134,6 +136,8 @@ function _buildTempPath(): string {
 
 export class StageContrastSampler {
   private _screenshot: Shell.Screenshot;
+  private _lastLuma: number | null = null;
+  private _lastIsBright: boolean | null = null;
 
   constructor() {
     this._screenshot = new Shell.Screenshot();
@@ -204,9 +208,26 @@ export class StageContrastSampler {
     if (luminance === null || luminance === undefined)
       return null;
 
-    return luminance > config.luminanceThreshold
-      ? config.darkTextColor
-      : config.lightTextColor;
+    const threshold = config.luminanceThreshold;
+
+    if (config.samplePerElement)
+      return luminance > threshold ? config.darkTextColor : config.lightTextColor;
+
+    const smoothed = this._lastLuma === null
+      ? luminance
+      : this._lastLuma * 0.7 + luminance * 0.3;
+    this._lastLuma = smoothed;
+
+    let isBright: boolean;
+    if (this._lastIsBright === null)
+      isBright = smoothed > threshold;
+    else if (this._lastIsBright)
+      isBright = smoothed > threshold - HYSTERESIS_MARGIN;
+    else
+      isBright = smoothed > threshold + HYSTERESIS_MARGIN;
+    this._lastIsBright = isBright;
+
+    return isBright ? config.darkTextColor : config.lightTextColor;
   }
 
   async chooseColorsForActors(actors: Clutter.Actor[], config: typeof AdaptiveContrastConfig = AdaptiveContrastConfig): Promise<Map<Clutter.Actor, string>> {
@@ -230,8 +251,9 @@ export class StageContrastSampler {
       const merged = _mergeRects(rects);
       if (!merged)
         return result;
+
       const luma = await this.sampleLuminance(merged);
-      if (!luma)
+      if (luma === null)
         return result;
       const color = this.decideTextColor(luma, config);
       if (!color)
@@ -244,7 +266,7 @@ export class StageContrastSampler {
 
     for (let i = 0; i < targets.length; i++) {
       const luma = await this.sampleLuminance(rects[i]);
-      if (!luma)
+      if (luma === null)
         return result;
       const color = this.decideTextColor(luma, config);
       if (color)
