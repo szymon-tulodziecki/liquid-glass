@@ -7,7 +7,7 @@ import Meta from 'gi://Meta';
 import Gio from 'gi://Gio';
 import { LiquidEffect } from './liquidEffect.js';
 import { StageContrastSampler, AdaptiveContrastConfig } from './contrastSampler.js';
-import { UnpickableActor, UILayerSampler, UnpickableWidget, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated, resolveMonitorGeometry, isActorValid } from './utils.js';
+import { UnpickableActor, UILayerSampler, UnpickableWidget, WindowCloneManager, reportFrameLoopError, ensureGlassAllocated, resolveMonitorGeometry, isActorValid, getAllocatedSize } from './utils.js';
 
 import { Logger } from './logger.js';
 
@@ -250,20 +250,37 @@ export class UIManager {
     return [r, g, b];
   }
 
-  _quickSettingsHeightScale(): number | null {
-    const qsMenu = Main.panel.statusArea.quickSettings?.menu?.actor;
-    if (!qsMenu || !isActorValid(qsMenu))
-      return null;
+  _naturalHeightOf(actor: any): number {
+    if (!actor || !isActorValid(actor))
+      return 0;
 
     try {
-      const [, qsNatural] = qsMenu.get_preferred_height(-1);
-      const [, ownNatural] = this.targetActor.get_preferred_height(-1);
-      if (!(qsNatural > 0) || !(ownNatural > 0))
-        return null;
-      return qsNatural / ownNatural;
-    } catch (e) {
+      const [, allocated] = getAllocatedSize(actor);
+      if (allocated > 1)
+        return allocated;
+    } catch (e) { /* fall through to the preferred size */ }
+
+    try {
+      const [, natural] = actor.get_preferred_height(-1);
+      if (natural > 1)
+        return natural;
+    } catch (e) { /* no usable measurement */ }
+
+    return 0;
+  }
+
+  _quickSettingsHeightScale(): number | null {
+    const quickSettings = Main.panel.statusArea.quickSettings?.menu;
+    if (!quickSettings)
       return null;
-    }
+
+    const targetHeight = this._naturalHeightOf(quickSettings.actor) || this._naturalHeightOf(quickSettings.box);
+    const ownHeight = this._naturalHeightOf(this.targetActor) || this._naturalHeightOf(this.animActor);
+    if (targetHeight <= 0 || ownHeight <= 0)
+      return null;
+
+    const ratio = targetHeight / ownHeight;
+    return Number.isFinite(ratio) && ratio > 0 ? ratio : null;
   }
 
   _applyMenuScale() {
