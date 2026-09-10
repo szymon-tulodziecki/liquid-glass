@@ -50,6 +50,7 @@ export class UIManager {
   private _menuXoffset: number;
   private _menuYoffset: number;
   private _menuScale: number = 1.0;
+  private _matchQuickSettingsHeight: boolean = false;
   private _tickId: number;
   private _contrastSampler: StageContrastSampler;
   private _adaptiveTimerId: number;
@@ -158,6 +159,7 @@ export class UIManager {
 
     this._enableAnimation = this._settings.get_boolean('enable-menu-animation');
     this._menuScale = this._settings.get_double('menu-scale');
+    this._matchQuickSettingsHeight = this._settings.get_boolean('menu-match-quick-settings-height');
     this._applyMenuScale();
     this._springStiffness = this._settings.get_double('menu-spring-stiffness');
     this._springDamping = this._settings.get_double('menu-spring-damping');
@@ -248,12 +250,35 @@ export class UIManager {
     return [r, g, b];
   }
 
+  _quickSettingsHeightScale(): number | null {
+    const qsMenu = Main.panel.statusArea.quickSettings?.menu?.actor;
+    if (!qsMenu || !isActorValid(qsMenu))
+      return null;
+
+    try {
+      const [, qsNatural] = qsMenu.get_preferred_height(-1);
+      const [, ownNatural] = this.targetActor.get_preferred_height(-1);
+      if (!(qsNatural > 0) || !(ownNatural > 0))
+        return null;
+      return qsNatural / ownNatural;
+    } catch (e) {
+      return null;
+    }
+  }
+
   _applyMenuScale() {
     if (!this.targetActor || !isActorValid(this.targetActor))
       return;
 
-    const scale = Number.isFinite(this._menuScale)
-      ? Math.min(1.0, Math.max(MIN_MENU_SCALE, this._menuScale))
+    let requested = this._menuScale;
+    if (this._matchQuickSettingsHeight) {
+      const matched = this._quickSettingsHeightScale();
+      if (matched !== null)
+        requested = matched;
+    }
+
+    const scale = Number.isFinite(requested)
+      ? Math.min(1.0, Math.max(MIN_MENU_SCALE, requested))
       : 1.0;
 
     this.targetActor.set_pivot_point(0.5, 0.0);
@@ -361,6 +386,11 @@ export class UIManager {
 
     connectSetting('menu-scale', () => {
       this._menuScale = this._settings.get_double('menu-scale');
+      this._applyMenuScale();
+    });
+
+    connectSetting('menu-match-quick-settings-height', () => {
+      this._matchQuickSettingsHeight = this._settings.get_boolean('menu-match-quick-settings-height');
       this._applyMenuScale();
     });
 

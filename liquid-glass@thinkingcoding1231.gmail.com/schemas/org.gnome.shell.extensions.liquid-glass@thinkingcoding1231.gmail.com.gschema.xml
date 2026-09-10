@@ -106,6 +106,11 @@
       <default>8</default>
       <summary>Blur radius</summary>
     </key>
+    <key name="menu-match-quick-settings-height" type="b">
+      <default>false</default>
+      <summary>Match Quick Settings height</summary>
+      <description>Scales the panel menu so its opened height matches the Quick Settings menu, so the two panel dropdowns line up. Overrides the manual scale.</description>
+    </key>
     <key name="menu-scale" type="d">
       <default>1.0</default>
       <summary>Menu scale</summary>
