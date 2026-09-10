@@ -12,6 +12,7 @@ import { setUtilsLogger } from './dist/utils.js';
 import GLib from 'gi://GLib';
 
 const DASH_RESCAN_IDLE_TICKS = 2;
+const EXTRA_GLASS_MENUS = ['keyboard', 'vitalsMenu'];
 const DASH_RESCAN_INTERVAL_MS = 2000;
 
 export default class LiquidGlassExtension extends Extension {
@@ -31,6 +32,13 @@ export default class LiquidGlassExtension extends Extension {
     // Pass the extension path so it can properly load the GLSL shader files
     this._uiManager = new UIManager(this.dir.get_path(), this._settings, this._logger);
     this._uiManager.setup();
+
+    this._extraMenuManagers = [];
+    this._extraMenuTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {
+      this._extraMenuTimeoutId = 0;
+      this._setupExtraMenuGlass();
+      return GLib.SOURCE_REMOVE;
+    });
 
     // Initialize the notification manager to apply effects to notifications
     this._notificationManager = new NotificationManager(this.dir.get_path(), this._settings, this._logger);
@@ -77,6 +85,24 @@ export default class LiquidGlassExtension extends Extension {
 
       return GLib.SOURCE_REMOVE;
     });
+  }
+
+  _setupExtraMenuGlass() {
+    for (const name of EXTRA_GLASS_MENUS) {
+      const panelButton = Main.panel.statusArea[name];
+      if (!panelButton || !panelButton.menu || !panelButton.menu.actor)
+        continue;
+
+      try {
+        const manager = new UIManager(this.dir.get_path(), this._settings, this._logger, panelButton, false);
+        manager.setup();
+        this._extraMenuManagers.push(manager);
+      } catch (e) {
+        this._logger.log(`[Liquid Glass] Failed to add glass to ${name}: ${e}`);
+      }
+    }
+
+    this._logger.log(`[Liquid Glass] Extra glass menus: ${this._extraMenuManagers.length}`);
   }
 
   _collectDashContainers() {
@@ -204,6 +230,20 @@ export default class LiquidGlassExtension extends Extension {
 
     // Crucial: Always restore the UI to its original state when the extension is disabled
     // Failing to clean up can result in invisible menus or memory leaks
+    if (this._extraMenuTimeoutId) {
+      GLib.Source.remove(this._extraMenuTimeoutId);
+      this._extraMenuTimeoutId = 0;
+    }
+
+    for (const manager of this._extraMenuManagers ?? []) {
+      try {
+        manager.cleanup();
+      } catch (e) {
+        this._logger.log(`[Liquid Glass] Failed to clean up an extra menu: ${e}`);
+      }
+    }
+    this._extraMenuManagers = [];
+
     if (this._uiManager) {
       this._uiManager.cleanup();
       this._uiManager = null;

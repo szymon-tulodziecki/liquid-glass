@@ -34,6 +34,7 @@ export class UIManager {
     _menuXoffset;
     _menuYoffset;
     _menuScale = 1.0;
+    _ownsAccentCss = true;
     _matchQuickSettingsHeight = false;
     _tickId;
     _contrastSampler;
@@ -73,16 +74,14 @@ export class UIManager {
     _uiSampler = null;
     _lastScreenW;
     _lastScreenH;
-    constructor(extensionPath, settings, logger) {
+    constructor(extensionPath, settings, logger, panelButton = Main.panel.statusArea.dateMenu, ownsAccentCss = true) {
         this.extensionPath = extensionPath;
         this._settings = settings;
         this._logger = logger;
-        // Target the main container of the Date/Calendar menu
-        this.targetActor = Main.panel.statusArea.dateMenu.menu.actor;
-        this.menu = Main.panel.statusArea.dateMenu.menu;
-        // Target for animations and visual offsets (The inner content)
-        // @ts-expect-error
-        this.animActor = Main.panel.statusArea.dateMenu.menu.box;
+        this._ownsAccentCss = ownsAccentCss;
+        this.targetActor = panelButton.menu.actor;
+        this.menu = panelButton.menu;
+        this.animActor = panelButton.menu.box;
         this.bgActor = null;
         this.effect = null;
         this._signals = [];
@@ -145,7 +144,7 @@ export class UIManager {
         }
     }
     _applySystemAccentColor() {
-        if (!this.targetActor)
+        if (!this._ownsAccentCss || !this.targetActor)
             return;
         // 1. 親要素と子要素を作成して、GNOMEテーマが要求する正しい階層を再現
         const parent = new UnpickableWidget({ style_class: 'calendar' });

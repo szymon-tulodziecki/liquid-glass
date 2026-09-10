@@ -50,6 +50,7 @@ export class UIManager {
   private _menuXoffset: number;
   private _menuYoffset: number;
   private _menuScale: number = 1.0;
+  private _ownsAccentCss: boolean = true;
   private _matchQuickSettingsHeight: boolean = false;
   private _tickId: number;
   private _contrastSampler: StageContrastSampler;
@@ -98,18 +99,16 @@ export class UIManager {
   private _lastScreenW: number | undefined;
   private _lastScreenH: number | undefined;
 
-  constructor(extensionPath: string, settings: Gio.Settings, logger: Logger) {
+  constructor(extensionPath: string, settings: Gio.Settings, logger: Logger,
+              panelButton: any = Main.panel.statusArea.dateMenu, ownsAccentCss: boolean = true) {
     this.extensionPath = extensionPath;
     this._settings = settings;
     this._logger = logger;
+    this._ownsAccentCss = ownsAccentCss;
 
-    // Target the main container of the Date/Calendar menu
-    this.targetActor = Main.panel.statusArea.dateMenu.menu.actor as St.Widget;
-    this.menu = Main.panel.statusArea.dateMenu.menu;
-
-    // Target for animations and visual offsets (The inner content)
-    // @ts-expect-error
-    this.animActor = Main.panel.statusArea.dateMenu.menu.box as St.Widget;
+    this.targetActor = panelButton.menu.actor as St.Widget;
+    this.menu = panelButton.menu;
+    this.animActor = panelButton.menu.box as St.Widget;
 
     this.bgActor = null;
     this.effect = null;
@@ -185,7 +184,7 @@ export class UIManager {
   }
 
   private _applySystemAccentColor() {
-    if (!this.targetActor) return;
+    if (!this._ownsAccentCss || !this.targetActor) return;
 
     // 1. 親要素と子要素を作成して、GNOMEテーマが要求する正しい階層を再現
     const parent = new UnpickableWidget({ style_class: 'calendar' });
