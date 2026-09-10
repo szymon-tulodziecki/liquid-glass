@@ -1,6 +1,7 @@
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { UIManager } from './dist/uiManager.js';
+import { PanelMenuManager } from './dist/panelMenuManager.js';
 import { DashManager } from './dist/dockManager.js';
 import { NotificationManager } from './dist/notificationManager.js';
 import { QuickSettingsManager } from './dist/quickSettingsManager.js';
@@ -12,10 +13,6 @@ import { setUtilsLogger } from './dist/utils.js';
 import GLib from 'gi://GLib';
 
 const DASH_RESCAN_IDLE_TICKS = 2;
-const EXTRA_GLASS_MENUS = [
-  { name: 'keyboard', key: 'enable-keyboard-menu-glass' },
-  { name: 'vitalsMenu', key: 'enable-vitals-menu-glass' },
-];
 const DASH_RESCAN_INTERVAL_MS = 2000;
 
 export default class LiquidGlassExtension extends Extension {
@@ -36,14 +33,8 @@ export default class LiquidGlassExtension extends Extension {
     this._uiManager = new UIManager(this.dir.get_path(), this._settings, this._logger);
     this._uiManager.setup();
 
-    this._extraMenuManagers = [];
-    this._extraMenuSignalIds = EXTRA_GLASS_MENUS.map(({ key }) =>
-      this._settings.connect(`changed::${key}`, () => this._setupExtraMenuGlass()));
-    this._extraMenuTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {
-      this._extraMenuTimeoutId = 0;
-      this._setupExtraMenuGlass();
-      return GLib.SOURCE_REMOVE;
-    });
+    this._panelMenuManager = new PanelMenuManager(this.dir.get_path(), this._settings, this._logger);
+    this._panelMenuManager.setup();
 
     // Initialize the notification manager to apply effects to notifications
     this._notificationManager = new NotificationManager(this.dir.get_path(), this._settings, this._logger);
@@ -90,43 +81,6 @@ export default class LiquidGlassExtension extends Extension {
 
       return GLib.SOURCE_REMOVE;
     });
-  }
-
-  _setupExtraMenuGlass() {
-    this._teardownExtraMenuGlass();
-
-    const detected = [];
-    for (const { name, key } of EXTRA_GLASS_MENUS) {
-      const panelButton = Main.panel.statusArea[name];
-      if (!panelButton || !panelButton.menu || !panelButton.menu.actor)
-        continue;
-
-      detected.push(name);
-      if (!this._settings.get_boolean(key))
-        continue;
-
-      try {
-        const manager = new UIManager(this.dir.get_path(), this._settings, this._logger, panelButton, false);
-        manager.setup();
-        this._extraMenuManagers.push(manager);
-      } catch (e) {
-        this._logger.log(`[Liquid Glass] Failed to add glass to ${name}: ${e}`);
-      }
-    }
-
-    this._settings.set_strv('detected-extra-menus', detected);
-    this._logger.log(`[Liquid Glass] Extra glass menus: ${this._extraMenuManagers.length} of ${detected.length} detected`);
-  }
-
-  _teardownExtraMenuGlass() {
-    for (const manager of this._extraMenuManagers ?? []) {
-      try {
-        manager.cleanup();
-      } catch (e) {
-        this._logger.log(`[Liquid Glass] Failed to clean up an extra menu: ${e}`);
-      }
-    }
-    this._extraMenuManagers = [];
   }
 
   _collectDashContainers() {
@@ -254,16 +208,8 @@ export default class LiquidGlassExtension extends Extension {
 
     // Crucial: Always restore the UI to its original state when the extension is disabled
     // Failing to clean up can result in invisible menus or memory leaks
-    if (this._extraMenuTimeoutId) {
-      GLib.Source.remove(this._extraMenuTimeoutId);
-      this._extraMenuTimeoutId = 0;
-    }
-
-    for (const id of this._extraMenuSignalIds ?? [])
-      this._settings.disconnect(id);
-    this._extraMenuSignalIds = [];
-
-    this._teardownExtraMenuGlass();
+    this._panelMenuManager?.cleanup();
+    this._panelMenuManager = null;
 
     if (this._uiManager) {
       this._uiManager.cleanup();

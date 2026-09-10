@@ -3,14 +3,15 @@ import Shell from 'gi://Shell';
 import GdkPixbuf from 'gi://GdkPixbuf';
 import Gio from 'gi://Gio';
 import Clutter from 'gi://Clutter';
+import { getTransformedRect } from './utils.js';
 
-const HYSTERESIS_MARGIN = 0.05;
+const SWITCH_ADVANTAGE = 1.2;
+const MIN_READABLE_CONTRAST = 4.5;
 
 export const AdaptiveContrastConfig = {
   enabled: true,
   samplePerElement: false, // 要素ごとにサンプリングするか、全体をまとめてサンプリングするか　負荷を考慮してデフォルトはまとめてサンプリング
   sampleIntervalMs: 200, // 5Hz
-  luminanceThreshold: 0.42,
   lightTextColor: '#f2f2f2',
   darkTextColor: '#1a1a1a',
 };
@@ -53,20 +54,16 @@ function _getActorRect(actor: Clutter.Actor): { x: number, y: number, width: num
   if (!actor)
     return null;
 
-  const [x, y] = actor.get_transformed_position();
-  const [w, h] = actor.get_size();
-
-  if ([x, y, w, h].some(Number.isNaN))
-    return null;
-
-  const width = Math.max(1, Math.floor(w));
-  const height = Math.max(1, Math.floor(h));
-  return {
-    x: Math.floor(x),
-    y: Math.floor(y),
-    width,
-    height,
-  };
+  if (!actor.mapped) return null;
+  const [x, y, w, h] = getTransformedRect(actor);
+  if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return null;
+  // Shell.Screenshot expects stage coordinates, including ancestor scale.
+  const left = Math.max(0, Math.floor(x));
+  const top = Math.max(0, Math.floor(y));
+  const right = Math.min(global.stage.width, Math.ceil(x + w));
+  const bottom = Math.min(global.stage.height, Math.ceil(y + h));
+  if (right <= left || bottom <= top) return null;
+  return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
 function _mergeRects(rects: { x: number, y: number, width: number, height: number }[]): { x: number, y: number, width: number, height: number } | null {
@@ -138,6 +135,7 @@ export class StageContrastSampler {
   private _screenshot: Shell.Screenshot;
   private _lastLuma: number | null = null;
   private _lastIsBright: boolean | null = null;
+  private _lastRect: { x: number; y: number; width: number; height: number } | null = null;
 
   constructor() {
     this._screenshot = new Shell.Screenshot();
@@ -148,11 +146,9 @@ export class StageContrastSampler {
       return null;
 
     const filePath = _buildTempPath();
-    const captured = await _captureAreaToFile(this._screenshot, rect, filePath);
-    if (!captured)
-      return null;
-
     try {
+      const captured = await _captureAreaToFile(this._screenshot, rect, filePath);
+      if (!captured) return null;
       const pixbuf = GdkPixbuf.Pixbuf.new_from_file(filePath);
       if (!pixbuf)
         return null;
@@ -208,25 +204,40 @@ export class StageContrastSampler {
     if (luminance === null || luminance === undefined)
       return null;
 
-    const threshold = config.luminanceThreshold;
+    if (!Number.isFinite(luminance)) return null;
+    luminance = _clamp(luminance, 0, 1);
+    const colorLuma = (hex: string) => {
+      const rgb = parseInt(hex.slice(1), 16);
+      return _luminanceFromRgb((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
+    };
+    const light = colorLuma(config.lightTextColor);
+    const dark = colorLuma(config.darkTextColor);
+    const contrast = (background: number, foreground: number) =>
+      (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05);
 
+    const rawLight = contrast(luminance, light);
+    const rawDark = contrast(luminance, dark);
     if (config.samplePerElement)
-      return luminance > threshold ? config.darkTextColor : config.lightTextColor;
+      return rawDark > rawLight ? config.darkTextColor : config.lightTextColor;
 
     const smoothed = this._lastLuma === null
-      ? luminance
-      : this._lastLuma * 0.7 + luminance * 0.3;
+      ? luminance : this._lastLuma * 0.7 + luminance * 0.3;
     this._lastLuma = smoothed;
+    const lightContrast = contrast(smoothed, light);
+    const darkContrast = contrast(smoothed, dark);
+    let isBright = this._lastIsBright ?? (darkContrast > lightContrast);
+    const current = isBright ? darkContrast : lightContrast;
+    const alternative = isBright ? lightContrast : darkContrast;
+    // A meaningful advantage prevents small sampling fluctuations changing polarity.
+    if (alternative > current * SWITCH_ADVANTAGE) isBright = !isBright;
 
-    let isBright: boolean;
-    if (this._lastIsBright === null)
-      isBright = smoothed > threshold;
-    else if (this._lastIsBright)
-      isBright = smoothed > threshold - HYSTERESIS_MARGIN;
-    else
-      isBright = smoothed > threshold + HYSTERESIS_MARGIN;
+    // Smoothing must never delay an obvious readability correction after a
+    // window/background changes. Use the current measurement for this decision.
+    const rawCurrent = isBright ? rawDark : rawLight;
+    const rawAlternative = isBright ? rawLight : rawDark;
+    if (rawCurrent < MIN_READABLE_CONTRAST && rawAlternative >= MIN_READABLE_CONTRAST)
+      isBright = !isBright;
     this._lastIsBright = isBright;
-
     return isBright ? config.darkTextColor : config.lightTextColor;
   }
 
@@ -252,6 +263,12 @@ export class StageContrastSampler {
       if (!merged)
         return result;
 
+      if (!this._lastRect || ['x', 'y', 'width', 'height'].some(key =>
+          Math.abs(merged[key as keyof typeof merged] - this._lastRect![key as keyof typeof merged]) > 2)) {
+        this._lastLuma = null;
+        this._lastIsBright = null;
+      }
+      this._lastRect = merged;
       const luma = await this.sampleLuminance(merged);
       if (luma === null)
         return result;

@@ -17,6 +17,7 @@ const SAMPLE_PER_ELEMENT = false;
 // ==============================================
 const MIN_MENU_SCALE = 0.5;
 export class UIManager {
+    _enableKey;
     extensionPath;
     _settings;
     _logger;
@@ -29,6 +30,8 @@ export class UIManager {
     _windowCloneManager = null;
     _signals;
     _animSignalId = 0;
+    _destroySignalId = 0;
+    _actorDestroyed = false;
     _frameSyncId;
     _glassExpand;
     _menuXoffset;
@@ -74,7 +77,8 @@ export class UIManager {
     _uiSampler = null;
     _lastScreenW;
     _lastScreenH;
-    constructor(extensionPath, settings, logger, panelButton = Main.panel.statusArea.dateMenu, ownsAccentCss = true) {
+    constructor(extensionPath, settings, logger, panelButton = Main.panel.statusArea.dateMenu, ownsAccentCss = true, _enableKey = 'enable-menu-glass') {
+        this._enableKey = _enableKey;
         this.extensionPath = extensionPath;
         this._settings = settings;
         this._logger = logger;
@@ -107,6 +111,8 @@ export class UIManager {
         this._isEffectActive = false;
         // Listen for the menu opening/closing to trigger our custom physics animation
         this._animSignalId = this.menu.connect('open-state-changed', (menu, isOpen) => {
+            if (!this._isEffectActive)
+                return;
             if (isOpen) {
                 this._applyMenuScale();
                 this._startAnimation(1); // Target scale: 1.0 (fully open)
@@ -114,6 +120,11 @@ export class UIManager {
             else {
                 this._startAnimation(0); // Target scale: 0.0 (closed)
             }
+        });
+        this._destroySignalId = this.targetActor.connect('destroy', () => {
+            this._actorDestroyed = true;
+            this._destroySignalId = 0;
+            this.cleanup();
         });
     }
     setup() {
@@ -139,7 +150,7 @@ export class UIManager {
         });
         // 初回実行
         this._applySystemAccentColor();
-        if (this._settings.get_boolean('enable-menu-glass')) {
+        if (this._settings.get_boolean(this._enableKey)) {
             this._applyEffect();
         }
     }
@@ -251,8 +262,8 @@ export class UIManager {
             this._settingsSignals.push(id);
         };
         // ON/OFF切り替え
-        connectSetting('enable-menu-glass', () => {
-            let enabled = this._settings.get_boolean('enable-menu-glass');
+        connectSetting(this._enableKey, () => {
+            let enabled = this._settings.get_boolean(this._enableKey);
             if (enabled && !this._isEffectActive)
                 this._applyEffect();
             else if (!enabled && this._isEffectActive)
@@ -730,9 +741,11 @@ export class UIManager {
         }
         if (actor._currentTargetColor === color && actor._currentInsensitiveState === isInsensitive)
             return;
+        // Interpolating light to dark passes through the background's own grey.
+        const changesPolarity = actor._currentTargetColor !== color;
         actor._currentTargetColor = color;
         actor._currentInsensitiveState = isInsensitive;
-        this._animateActorColor(actor, color, isInsensitive, 380, skipAnimations);
+        this._animateActorColor(actor, color, isInsensitive, 380, skipAnimations || changesPolarity);
     }
     // Removes all dynamically applied adaptive text color styles and stops related animations
     _clearAdaptiveStyles() {
@@ -754,21 +767,6 @@ export class UIManager {
             }
         }
         this._styledActors.clear();
-        const currentTargets = this._collectAdaptiveTextTargets();
-        for (let actor of currentTargets) {
-            if (actor && typeof actor.set_style === 'function') {
-                if (actor._colorTweenId) {
-                    GLib.source_remove(actor._colorTweenId);
-                    actor._colorTweenId = undefined;
-                }
-                actor._currentTargetColor = undefined;
-                actor._currentInsensitiveState = undefined;
-                try {
-                    actor.set_style(null);
-                }
-                catch (e) { }
-            }
-        }
     }
     // Iterates through the color map and applies the new target colors to the respective actors
     _applyAdaptiveColorMap(colorMap, skipAnimations = false) {
@@ -812,6 +810,8 @@ export class UIManager {
         this._contrastSampler
             .chooseColorsForActors(targets, this._adaptiveConfig)
             .then(colorMap => {
+            if (!this._isEffectActive || this._actorDestroyed)
+                return;
             this._applyAdaptiveColorMap(colorMap, skipAnimations);
         })
             .catch(e => {
@@ -841,6 +841,8 @@ export class UIManager {
             GLib.source_remove(actor._colorTweenId);
             actor._colorTweenId = undefined;
         }
+        const originalStyle = (this._styledActors.get(actor) || '').trim();
+        const stylePrefix = originalStyle ? `${originalStyle.replace(/;$/, '')}; ` : '';
         let themeNode = actor.get_theme_node();
         let startColor = themeNode.get_foreground_color();
         let targetRgb = this._hexToRgb(targetHexColor);
@@ -850,7 +852,7 @@ export class UIManager {
             let alphaStr = targetAlpha.toFixed(3);
             let targetRgba = `rgba(${targetRgb.r}, ${targetRgb.g}, ${targetRgb.b}, ${alphaStr})`;
             try {
-                actor.set_style(`color: ${targetRgba}; -st-icon-foreground-color: ${targetRgba};`);
+                actor.set_style(`${stylePrefix}color: ${targetRgba}; -st-icon-foreground-color: ${targetRgba};`);
             }
             catch (e) { }
             return;
@@ -873,7 +875,7 @@ export class UIManager {
             let alphaStr = a.toFixed(3);
             let currentRgba = `rgba(${r}, ${g}, ${b}, ${alphaStr})`;
             try {
-                actor.set_style(`color: ${currentRgba}; -st-icon-foreground-color: ${currentRgba};`);
+                actor.set_style(`${stylePrefix}color: ${currentRgba}; -st-icon-foreground-color: ${currentRgba};`);
             }
             catch (e) { }
             if (progress >= 1.0) {
@@ -1038,10 +1040,12 @@ export class UIManager {
             this._interfaceSettings = null;
         }
         // Remove transparent CSS overrides
-        this.targetActor.remove_style_class_name('liquid-glass-transparent');
-        if (this.animActor) {
+        if (!this._actorDestroyed)
+            this.targetActor.remove_style_class_name('liquid-glass-transparent');
+        if (!this._actorDestroyed && this.animActor) {
             this.animActor.remove_style_class_name('liquid-glass-transparent');
             this.animActor.remove_style_class_name('liquid-glass-menu-root');
+            this.animActor.translation_x = 0;
             this.animActor.translation_y = 0;
             this.animActor.set_scale(1.0, 1.0);
             this.animActor.opacity = 255;
@@ -1052,10 +1056,12 @@ export class UIManager {
             theme.unload_stylesheet(this._dynamicCssFile);
             this._dynamicCssFile = null;
         }
-        this.targetActor.translation_y = 0;
-        this.targetActor.set_scale(1.0, 1.0);
-        this.targetActor.opacity = 255;
-        if (this.menu.actor) {
+        if (!this._actorDestroyed) {
+            this.targetActor.translation_y = 0;
+            this.targetActor.set_scale(1.0, 1.0);
+            this.targetActor.opacity = 255;
+        }
+        if (!this._actorDestroyed && this.menu.actor) {
             this.menu.actor.opacity = 255;
             if (this.menu.isOpen) {
                 this.menu.close(false);
@@ -1084,6 +1090,20 @@ export class UIManager {
         this._stableBaseH = undefined;
     }
     cleanup() {
+        // These connections also exist when the global menu effect is disabled.
+        if (this._animSignalId) {
+            this.menu.disconnect(this._animSignalId);
+            this._animSignalId = 0;
+        }
+        if (this._destroySignalId) {
+            this.targetActor.disconnect(this._destroySignalId);
+            this._destroySignalId = 0;
+        }
+        if (this._interfaceSettings && this._accentColorSignalId) {
+            this._interfaceSettings.disconnect(this._accentColorSignalId);
+            this._accentColorSignalId = 0;
+            this._interfaceSettings = null;
+        }
         for (let sigId of this._settingsSignals) {
             try {
                 this._settings.disconnect(sigId);
