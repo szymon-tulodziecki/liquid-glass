@@ -247,21 +247,7 @@ export class OsdManager {
       this._setupOsdEffect(osdWindow);
     }
 
-    for (let state of this._osdStates) {
-      if (!state._uiSampler) continue;
-      for (let other of this._osdStates) {
-        if (other !== state && other.bgActor) {
-          state._uiSampler.addExclusion(other.bgActor);
-        }
-      }
-      for (let child of Main.layoutManager.uiGroup.get_children()) {
-        if (child === state.bgActor) continue;
-        let isLiquidBg = child.get_name?.() === 'liquid-glass-bg-actor' ||
-          (typeof child.get_children === 'function' &&
-            child.get_children().some((c: Clutter.Actor) => c.get_name?.() === 'liquid-box'));
-        if (isLiquidBg) state._uiSampler.addExclusion(child);
-      }
-    }
+    for (const state of this._osdStates) this._excludeOtherGlass(state);
 
     const frameLaterType = Meta.LaterType.BEFORE_REDRAW;
     const frameTick = () => {
@@ -297,6 +283,22 @@ export class OsdManager {
         this._applyEffect();
       }
     });
+  }
+
+  private _excludeOtherGlass(state: OsdState): void {
+    if (!state._uiSampler) return;
+    for (let other of this._osdStates) {
+      if (other !== state && other.bgActor) {
+        state._uiSampler.addExclusion(other.bgActor);
+      }
+    }
+    for (let child of Main.layoutManager.uiGroup.get_children()) {
+      if (child === state.bgActor) continue;
+      let isLiquidBg = child.get_name?.() === 'liquid-glass-bg-actor' ||
+        (typeof child.get_children === 'function' &&
+          child.get_children().some((c: Clutter.Actor) => c.get_name?.() === 'liquid-box'));
+      if (isLiquidBg) state._uiSampler.addExclusion(child);
+    }
   }
 
   _setupOsdEffect(osdWindow) {
