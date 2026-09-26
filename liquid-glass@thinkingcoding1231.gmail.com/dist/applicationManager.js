@@ -1056,43 +1056,7 @@ export class ApplicationManager {
         this._lastTickUs = nowUs;
         for (let state of this._states.values()) {
             try {
-                const metaWin = state.windowActor?.get_meta_window?.();
-                if (!metaWin)
-                    continue;
-                try {
-                    const label = metaWin.get_title() || '(untitled)';
-                    if (state.effect._diagOwnerLabel !== label)
-                        state.effect._diagOwnerLabel = label;
-                }
-                catch { }
-                const rescue = ensureWindowActorAllocated(state.windowActor, WINDOW_ACTOR_RELAYOUT_FRAMES, WINDOW_ACTOR_STRANDED_FRAMES);
-                if (rescue) {
-                    const title = metaWin.get_title() || '(untitled)';
-                    noteStrandEntry(title, `wa.alloc=${state.windowActor.has_allocation()} ` +
-                        `wg.alloc=${(() => {
-                            const p = state.windowActor.get_parent();
-                            return p ? p.has_allocation() : '-';
-                        })()} ` +
-                        `scale=${state.windowActor.scale_x.toFixed(3)} op=${state.windowActor.opacity} ` +
-                        `min=${metaWin.minimized} stage=${rescue}`);
-                    this._logger.log(`[Liquid Glass][strand] ${rescue} for "${title}" — ` +
-                        `wa(mapped=${state.windowActor.mapped},vis=${state.windowActor.visible},` +
-                        `alloc=${state.windowActor.has_allocation()},op=${state.windowActor.opacity},` +
-                        `scale=${state.windowActor.scale_x.toFixed(3)}) ` +
-                        `parent(${(() => {
-                            const p = state.windowActor.get_parent();
-                            return p ? `${p.constructor?.name},mapped=${p.mapped},alloc=${p.has_allocation()}` : 'none';
-                        })()}) ` +
-                        `bg(mapped=${state.bgActor.mapped},vis=${state.bgActor.visible},` +
-                        `alloc=${state.bgActor.has_allocation()}) ` +
-                        `min=${metaWin.minimized}`);
-                }
-                ensureGlassAllocated(state.bgActor);
-                ensureGlassAllocated(state.baseActor);
-                ensureGlassAllocated(state.cornerOverlay);
-                this._syncState(state);
-                if (this._debugFocusLogFrames > 0)
-                    this._logFocusDebugInfo(state);
+                this._syncFrameState(state);
             }
             catch (e) {
                 this._logger.error(`[Liquid Glass] Error in _syncState: ${e}`);
@@ -1100,6 +1064,45 @@ export class ApplicationManager {
         }
         if (this._debugFocusLogFrames > 0)
             this._debugFocusLogFrames--;
+    }
+    _syncFrameState(state) {
+        const metaWin = state.windowActor?.get_meta_window?.();
+        if (!metaWin)
+            return;
+        try {
+            const label = metaWin.get_title() || '(untitled)';
+            if (state.effect._diagOwnerLabel !== label)
+                state.effect._diagOwnerLabel = label;
+        }
+        catch { }
+        const rescue = ensureWindowActorAllocated(state.windowActor, WINDOW_ACTOR_RELAYOUT_FRAMES, WINDOW_ACTOR_STRANDED_FRAMES);
+        if (rescue) {
+            const title = metaWin.get_title() || '(untitled)';
+            noteStrandEntry(title, `wa.alloc=${state.windowActor.has_allocation()} ` +
+                `wg.alloc=${(() => {
+                    const p = state.windowActor.get_parent();
+                    return p ? p.has_allocation() : '-';
+                })()} ` +
+                `scale=${state.windowActor.scale_x.toFixed(3)} op=${state.windowActor.opacity} ` +
+                `min=${metaWin.minimized} stage=${rescue}`);
+            this._logger.log(`[Liquid Glass][strand] ${rescue} for "${title}" — ` +
+                `wa(mapped=${state.windowActor.mapped},vis=${state.windowActor.visible},` +
+                `alloc=${state.windowActor.has_allocation()},op=${state.windowActor.opacity},` +
+                `scale=${state.windowActor.scale_x.toFixed(3)}) ` +
+                `parent(${(() => {
+                    const p = state.windowActor.get_parent();
+                    return p ? `${p.constructor?.name},mapped=${p.mapped},alloc=${p.has_allocation()}` : 'none';
+                })()}) ` +
+                `bg(mapped=${state.bgActor.mapped},vis=${state.bgActor.visible},` +
+                `alloc=${state.bgActor.has_allocation()}) ` +
+                `min=${metaWin.minimized}`);
+        }
+        ensureGlassAllocated(state.bgActor);
+        ensureGlassAllocated(state.baseActor);
+        ensureGlassAllocated(state.cornerOverlay);
+        this._syncState(state);
+        if (this._debugFocusLogFrames > 0)
+            this._logFocusDebugInfo(state);
     }
     _armFocusDebug(reason) {
         if (!isFocusDebugEnabled())
