@@ -1,4 +1,5 @@
 import { ToggleStyles } from './quickSettings/toggleStyles.js';
+import { stepMenuSprings, applyMenuFrame, showMenuAtRest } from './animation/menuSpring.js';
 import { addFrameTicker, removeFrameTicker, normalizeAnimationIntervalMs } from './animation/frameTicker.js';
 import { Spring } from './animation/spring.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -1558,15 +1559,7 @@ export class QuickSettingsManager {
     }
 
     if (!this._enableAnimation) {
-      if (this.bgActor) {
-        this.bgActor.remove_all_transitions();
-        this.bgActor.opacity = 255;
-        this.bgActor.set_scale(1.0, 1.0);
-        if (this.animActor) {
-          this.animActor.set_scale(1.0, 1.0);
-          this.animActor.opacity = 255;
-        }
-      }
+      showMenuAtRest(this.bgActor, this.animActor);
       return;
     }
 
@@ -1589,64 +1582,10 @@ export class QuickSettingsManager {
         let elapsedMs = (currentTime - lastTime) / 1000;
         lastTime = currentTime;
 
-        let isClosing = (this._springScale.target === 0);
-        let dt = elapsedMs / 1000;
-        if (dt > 0.033) dt = 0.033;
-
-        let stopped = false;
-        let s: number, p: number;
-
-        if (isClosing) {
-          let speed = 15.0;
-          this._springScale.value += (0 - this._springScale.value) * (1.0 - Math.exp(-speed * dt));
-          this._springPos.value += (0 - this._springPos.value) * (1.0 - Math.exp(-speed * dt));
-          s = this._springScale.value;
-          p = this._springPos.value;
-          if (s < 0.005) { s = 0; p = 0; stopped = true; }
-        } else {
-          stopped = this._springScale.update(elapsedMs) && this._springPos.update(elapsedMs);
-          s = this._springScale.value;
-          p = this._springPos.value;
-          if (Math.abs(1.0 - s) < 0.002 && Math.abs(this._springScale.velocity) < 0.03) {
-            s = 1.0; p = 1.0; stopped = true;
-          }
-        }
-
-        let currentScale: number;
-        let opacity: number;
-
-        if (isClosing) {
-          currentScale = Math.max(0.001, s);
-          opacity = Math.min(255, Math.max(0, (s - 0.3) / 0.7 * 255));
-        } else {
-          currentScale = 0.2 + (s * 0.8);
-          opacity = Math.min(255, Math.max(0, (s / 0.3) * 255));
-        }
-
-        this.animActor.set_scale(currentScale, currentScale);
-        this.bgActor.opacity = opacity;
-        this.animActor.opacity = opacity;
-
-        this._syncGeometry();
-
-        if (stopped) {
-          this._tickId = 0;
-
-          if (isClosing && this.menu.actor) {
-            this.menu.actor.hide();
-            this.bgActor.opacity = 0;
-            this.animActor.opacity = 0;
-          }
-
-          if (!isClosing) {
-            this.animActor.set_scale(1.0, 1.0);
-            this.animActor.opacity = 255;
-            this.bgActor.opacity = 255;
-            this._syncGeometry();
-          }
-          return GLib.SOURCE_REMOVE;
-        }
-        return GLib.SOURCE_CONTINUE;
+        const frame = stepMenuSprings(this._springScale, this._springPos, elapsedMs);
+        if (frame.stopped) this._tickId = 0;
+        applyMenuFrame(frame, this.animActor, this.bgActor, this.menu.actor, () => this._syncGeometry());
+        return frame.stopped ? GLib.SOURCE_REMOVE : GLib.SOURCE_CONTINUE;
       }, normalizeAnimationIntervalMs(this._animationInterval));
     }
   }
