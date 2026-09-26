@@ -19,6 +19,7 @@ import { setTranslationIfChanged, setSizeIfChanged, setScaleIfChanged, setOpacit
 import { isCullSiteEnabled } from './capture/options.js';
 import { createBackgroundMirror } from './capture/background.js';
 import { reportClonedWindowActors, releaseClonedWindowActors } from './capture/windowCulling.js';
+import { syncDamageHooks, releaseDamageHooks } from './capture/damageHooks.js';
 
 import { Logger } from './logger.js';
 
@@ -998,12 +999,7 @@ export class ApplicationManager {
       pivotFxEarly * (Number.isFinite(actorWEarly) ? actorWEarly : 0),
       pivotFyEarly * (Number.isFinite(actorHEarly) ? actorHEarly : 0),
     ];
-    for (let i = 0; i < GEOM_SIG_LEN; i++) {
-      if (sig[i] !== sigValues[i]) {
-        geomUnchanged = false;
-        sig[i] = sigValues[i];
-      }
-    }
+    geomUnchanged = this._updateGeometrySignature(sig, sigValues, geomUnchanged);
 
     if (geomUnchanged) {
       this._syncClones(state);
@@ -1041,8 +1037,44 @@ export class ApplicationManager {
 
     this._syncAnimatedCornerRadius(state, sx);
 
-    const anchorOffBy = anchorOffByEarly;
 
+    this._syncCaptureOffset(state, actor, [pivotFxEarly, pivotFyEarly],
+      [actorWEarly, actorHEarly], [sx, sy], [localX, localY]);
+
+    this._syncClones(state);
+
+    setActorVisible(state.cornerOverlay, CORNER_REVEAL_ENABLED);
+
+    if (CORNER_REVEAL_ENABLED) {
+      const baseW = visW + (margin * 2);
+      const baseH = visH + (margin * 2);
+
+      this._applyCounterScale(state.cornerOverlay, actor, frameDX - margin, frameDY - margin, baseW, baseH);
+
+      state.cornerOverlayClone.set_position(0, 0);
+      state.cornerOverlayClone.set_size(baseW, baseH);
+    }
+
+    if (anchorOffByEarly > MAX_ANCHOR_DISPLACEMENT) {
+      this._setGlassStrandHidden(state, true);
+      state.geomSig = undefined;
+    } else {
+      this._setGlassStrandHidden(state, false);
+    }
+  }
+  private _updateGeometrySignature(sig: Float64Array, values: number[], unchanged: boolean): boolean {
+    for (let i = 0; i < sig.length; i++) {
+      if (sig[i] !== values[i]) {
+        unchanged = false;
+        sig[i] = values[i];
+      }
+    }
+    return unchanged;
+  }
+
+  private _syncCaptureOffset(state: WindowState, actor: Meta.WindowActor,
+    [pivotFxEarly, pivotFyEarly]: [number, number], [actorWEarly, actorHEarly]: [number, number],
+    [sx, sy]: [number, number], [localX, localY]: [number, number]): void {
     const pivotPxX = (Number.isFinite(pivotFxEarly) ? pivotFxEarly : 0) * (Number.isFinite(actorWEarly) ? actorWEarly : 0);
     const pivotPxY = (Number.isFinite(pivotFyEarly) ? pivotFyEarly : 0) * (Number.isFinite(actorHEarly) ? actorHEarly : 0);
 
@@ -1059,29 +1091,11 @@ export class ApplicationManager {
       state.constraints.baseWindows.setOffset(offsetX, offsetY);
     }
 
-    this._syncClones(state);
-
-    setActorVisible(state.cornerOverlay, CORNER_REVEAL_ENABLED);
-
-    if (CORNER_REVEAL_ENABLED) {
-      const baseW = visW + (margin * 2);
-      const baseH = visH + (margin * 2);
-
-      this._applyCounterScale(state.cornerOverlay, actor, frameDX - margin, frameDY - margin, baseW, baseH);
-
-      state.cornerOverlayClone.set_position(0, 0);
-      state.cornerOverlayClone.set_size(baseW, baseH);
-    }
-
-    if (anchorOffBy > MAX_ANCHOR_DISPLACEMENT) {
-      this._setGlassStrandHidden(state, true);
-      state.geomSig = undefined;
-    } else {
-      this._setGlassStrandHidden(state, false);
-    }
   }
+
   _repairNestedGlass(state: WindowState): void {
     const mode = getNestedGlassFix();
+    if (mode !== 'damage') this._releaseDamageHooks(state);
     if (mode === 'off') return;
     const bg = state.bgActor;
     if (!bg || !isActorValid(bg) || !bg.mapped || !bg.visible) return;
@@ -1096,6 +1110,10 @@ export class ApplicationManager {
       return;
     }
 
+    if (this._nestedClonesChanged(state)) bg.queue_redraw();
+  }
+
+  private _nestedClonesChanged(state: WindowState): boolean {
     let seen = state.nestedSerials;
     if (!seen) { seen = new Map(); state.nestedSerials = seen; }
 
@@ -1107,44 +1125,23 @@ export class ApplicationManager {
       const serial = inner._recaptureSerial;
       if (seen.get(src) !== serial) { seen.set(src, serial); stale = true; }
     }
-    if (seen.size > state.clones.size) {
-      for (const src of [...seen.keys()]) if (!state.clones.has(src)) seen.delete(src);
-    }
-
-    if (stale) bg.queue_redraw();
+    for (const src of seen.keys()) if (!state.clones.has(src)) seen.delete(src);
+    return stale;
   }
 
   _syncDamageHooks(state: WindowState): void {
     let hooks = state.damageHooks;
     if (!hooks) { hooks = new Map(); state.damageHooks = hooks; }
 
-    for (const src of state.clones.keys()) {
-      if (hooks.has(src)) continue;
-      if (!isActorValid(src) || !innerGlassEffectOf(src)) continue;
-      try {
-        const id = src.connect('damaged', () => {
-          const bg = state.bgActor;
-          if (bg && isActorValid(bg) && bg.mapped && bg.visible) bg.queue_redraw();
-        });
-        hooks.set(src, id);
-      } catch { }
-    }
-
-    if (hooks.size > state.clones.size) {
-      for (const [src, id] of [...hooks]) {
-        if (state.clones.has(src)) continue;
-        try { if (isActorValid(src)) src.disconnect(id); } catch { }
-        hooks.delete(src);
-      }
-    }
+    syncDamageHooks(hooks, state.clones, () => {
+      const bg = state.bgActor;
+      if (bg && isActorValid(bg) && bg.mapped && bg.visible) bg.queue_redraw();
+    });
   }
 
   _releaseDamageHooks(state: WindowState): void {
     if (!state.damageHooks) return;
-    for (const [src, id] of state.damageHooks) {
-      try { if (isActorValid(src)) src.disconnect(id); } catch { }
-    }
-    state.damageHooks.clear();
+    releaseDamageHooks(state.damageHooks);
     state.damageHooks = undefined;
   }
 
@@ -1153,31 +1150,7 @@ export class ApplicationManager {
     const cullRect = (isCullSiteEnabled('app') && animSx === 1 && animSy === 1)
       ? state.glassScreenRect
       : undefined;
-    for (let [src, clone] of state.clones.entries()) {
-      if (!isActorValid(src) || !src.visible || !src.mapped) {
-        if (isActorValid(clone)) setActorVisible(clone, false);
-        this._clearCloneAnomaly(clone);
-        continue;
-      }
-      if (isActorValid(clone)) {
-        if (this._shouldCullClone(src, cullRect)) {
-          setCloneCulled(clone, true, () => this._cullWhy(src, cullRect!, 'blurred'));
-          this._clearCloneAnomaly(clone);
-          continue;
-        }
-        setCloneCulled(clone, false, 'app/blurred');
-        setActorVisible(clone, true);
-
-        if (clone.x !== 0 || clone.y !== 0) clone.set_position(0, 0);
-        setTranslationIfChanged(clone, src.x, src.y);
-
-        setSizeIfChanged(clone, src.width, src.height);
-        setScaleIfChanged(clone, src.scale_x, src.scale_y);
-        setOpacityIfChanged(clone, src.opacity);
-
-        this._checkCloneAnomaly(clone, src, 'blurred');
-      }
-    }
+    this._syncCloneLayer(state.clones, cullRect, 'blurred');
 
     reportClonedWindowActors(state, state.clones.keys());
 
@@ -1185,7 +1158,12 @@ export class ApplicationManager {
 
     if (!BASE_LAYER_ENABLED) return;
 
-    for (let [src, clone] of state.baseClones.entries()) {
+    this._syncCloneLayer(state.baseClones, cullRect, 'base');
+  }
+
+  private _syncCloneLayer(clones: Map<Meta.WindowActor, Clutter.Actor>,
+    cullRect: [number, number, number, number] | undefined, kind: string): void {
+    for (let [src, clone] of clones.entries()) {
       if (!isActorValid(src) || !src.visible || !src.mapped) {
         if (isActorValid(clone)) setActorVisible(clone, false);
         this._clearCloneAnomaly(clone);
@@ -1193,11 +1171,11 @@ export class ApplicationManager {
       }
       if (isActorValid(clone)) {
         if (this._shouldCullClone(src, cullRect)) {
-          setCloneCulled(clone, true, () => this._cullWhy(src, cullRect!, 'base'));
+          setCloneCulled(clone, true, () => this._cullWhy(src, cullRect!, kind));
           this._clearCloneAnomaly(clone);
           continue;
         }
-        setCloneCulled(clone, false, 'app/base');
+        setCloneCulled(clone, false, `app/${kind}`);
         setActorVisible(clone, true);
 
         if (clone.x !== 0 || clone.y !== 0) clone.set_position(0, 0);
@@ -1207,9 +1185,10 @@ export class ApplicationManager {
         setScaleIfChanged(clone, src.scale_x, src.scale_y);
         setOpacityIfChanged(clone, src.opacity);
 
-        this._checkCloneAnomaly(clone, src, 'base');
+        this._checkCloneAnomaly(clone, src, kind);
       }
     }
+
   }
 
   _checkCloneAnomaly(clone: Clutter.Actor, src: Meta.WindowActor, kind: string): void {
@@ -1277,48 +1256,52 @@ export class ApplicationManager {
 
     for (let state of this._states.values()) {
       try {
-        const metaWin = state.windowActor?.get_meta_window?.();
-        if (!metaWin) continue;
-        try {
-          const label = metaWin.get_title() || '(untitled)';
-          if ((state.effect as any)._diagOwnerLabel !== label)
-            (state.effect as any)._diagOwnerLabel = label;
-        } catch { }
-
-        const rescue = ensureWindowActorAllocated(
-          state.windowActor, WINDOW_ACTOR_RELAYOUT_FRAMES, WINDOW_ACTOR_STRANDED_FRAMES);
-        if (rescue) {
-          const title = metaWin.get_title() || '(untitled)';
-          noteStrandEntry(title,
-            `wa.alloc=${state.windowActor.has_allocation()} ` +
-            `wg.alloc=${(() => { const p: any = state.windowActor.get_parent();
-              return p ? p.has_allocation() : '-'; })()} ` +
-            `scale=${state.windowActor.scale_x.toFixed(3)} op=${state.windowActor.opacity} ` +
-            `min=${metaWin.minimized} stage=${rescue}`);
-          this._logger.log(
-            `[Liquid Glass][strand] ${rescue} for "${title}" — ` +
-            `wa(mapped=${state.windowActor.mapped},vis=${state.windowActor.visible},` +
-            `alloc=${state.windowActor.has_allocation()},op=${state.windowActor.opacity},` +
-            `scale=${state.windowActor.scale_x.toFixed(3)}) ` +
-            `parent(${(() => { const p: any = state.windowActor.get_parent();
-              return p ? `${p.constructor?.name},mapped=${p.mapped},alloc=${p.has_allocation()}` : 'none'; })()}) ` +
-            `bg(mapped=${state.bgActor.mapped},vis=${state.bgActor.visible},` +
-            `alloc=${state.bgActor.has_allocation()}) ` +
-            `min=${metaWin.minimized}`
-          );
-        }
-        ensureGlassAllocated(state.bgActor);
-        ensureGlassAllocated(state.baseActor);
-        ensureGlassAllocated(state.cornerOverlay);
-        this._syncState(state);
-
-        if (this._debugFocusLogFrames > 0) this._logFocusDebugInfo(state);
+        this._syncFrameState(state);
       } catch (e) {
         this._logger.error(`[Liquid Glass] Error in _syncState: ${e}`);
       }
     }
 
     if (this._debugFocusLogFrames > 0) this._debugFocusLogFrames--;
+  }
+
+  private _syncFrameState(state: WindowState): void {
+    const metaWin = state.windowActor?.get_meta_window?.();
+    if (!metaWin) return;
+    try {
+      const label = metaWin.get_title() || '(untitled)';
+      if ((state.effect as any)._diagOwnerLabel !== label)
+        (state.effect as any)._diagOwnerLabel = label;
+    } catch { }
+
+    const rescue = ensureWindowActorAllocated(
+      state.windowActor, WINDOW_ACTOR_RELAYOUT_FRAMES, WINDOW_ACTOR_STRANDED_FRAMES);
+    if (rescue) {
+      const title = metaWin.get_title() || '(untitled)';
+      noteStrandEntry(title,
+        `wa.alloc=${state.windowActor.has_allocation()} ` +
+        `wg.alloc=${(() => { const p: any = state.windowActor.get_parent();
+          return p ? p.has_allocation() : '-'; })()} ` +
+        `scale=${state.windowActor.scale_x.toFixed(3)} op=${state.windowActor.opacity} ` +
+        `min=${metaWin.minimized} stage=${rescue}`);
+      this._logger.log(
+        `[Liquid Glass][strand] ${rescue} for "${title}" — ` +
+        `wa(mapped=${state.windowActor.mapped},vis=${state.windowActor.visible},` +
+        `alloc=${state.windowActor.has_allocation()},op=${state.windowActor.opacity},` +
+        `scale=${state.windowActor.scale_x.toFixed(3)}) ` +
+        `parent(${(() => { const p: any = state.windowActor.get_parent();
+          return p ? `${p.constructor?.name},mapped=${p.mapped},alloc=${p.has_allocation()}` : 'none'; })()}) ` +
+        `bg(mapped=${state.bgActor.mapped},vis=${state.bgActor.visible},` +
+        `alloc=${state.bgActor.has_allocation()}) ` +
+        `min=${metaWin.minimized}`
+      );
+    }
+    ensureGlassAllocated(state.bgActor);
+    ensureGlassAllocated(state.baseActor);
+    ensureGlassAllocated(state.cornerOverlay);
+    this._syncState(state);
+
+    if (this._debugFocusLogFrames > 0) this._logFocusDebugInfo(state);
   }
 
   _armFocusDebug(reason: string) {
@@ -1492,38 +1475,8 @@ export class ApplicationManager {
       state.remapReallocLaterId = 0;
     }
 
-    if (state.surfaceActor) {
-      try {
-        if (isActorValid(state.surfaceActor)) {
-          state.surfaceActor.opacity = state.originalOpacity;
-        }
-      } catch {
-      }
-    }
-
-    if (state.signals) {
-      state.signals.forEach(sig => {
-        try {
-          sig.obj.disconnect(sig.id);
-        } catch { }
-      });
-      state.signals = [];
-    }
-    if (state.constraints) {
-      if (isActorValid(state.bgClone))
-        state.bgClone.remove_constraint(state.constraints.bg);
-      if (isActorValid(state.windowsContainer))
-        state.windowsContainer.remove_constraint(state.constraints.windows);
-      if (isActorValid(state.baseClone))
-        state.baseClone.remove_constraint(state.constraints.base);
-      if (isActorValid(state.baseWindowsContainer))
-        state.baseWindowsContainer.remove_constraint(state.constraints.baseWindows);
-
-      state.constraints.bg.source = null;
-      state.constraints.windows.source = null;
-      state.constraints.base.source = null;
-      state.constraints.baseWindows.source = null;
-    }
+    this._restoreWindowSurface(state);
+    this._releaseWindowConstraints(state);
 
     state.clones.forEach(clone => { if (isActorValid(clone)) clone.destroy(); });
     state.clones.clear();
@@ -1545,5 +1498,42 @@ export class ApplicationManager {
 
     if (isActorValid(state.cornerOverlay))
       state.cornerOverlay.destroy();
+  }
+  private _restoreWindowSurface(state: WindowState): void {
+    if (state.surfaceActor) {
+      try {
+        if (isActorValid(state.surfaceActor)) {
+          state.surfaceActor.opacity = state.originalOpacity;
+        }
+      } catch {
+      }
+    }
+
+    if (state.signals) {
+      state.signals.forEach(sig => {
+        try {
+          sig.obj.disconnect(sig.id);
+        } catch { }
+      });
+      state.signals = [];
+    }
+  }
+
+  private _releaseWindowConstraints(state: WindowState): void {
+    if (state.constraints) {
+      if (isActorValid(state.bgClone))
+        state.bgClone.remove_constraint(state.constraints.bg);
+      if (isActorValid(state.windowsContainer))
+        state.windowsContainer.remove_constraint(state.constraints.windows);
+      if (isActorValid(state.baseClone))
+        state.baseClone.remove_constraint(state.constraints.base);
+      if (isActorValid(state.baseWindowsContainer))
+        state.baseWindowsContainer.remove_constraint(state.constraints.baseWindows);
+
+      state.constraints.bg.source = null;
+      state.constraints.windows.source = null;
+      state.constraints.base.source = null;
+      state.constraints.baseWindows.source = null;
+    }
   }
 }
