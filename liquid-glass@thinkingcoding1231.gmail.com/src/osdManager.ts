@@ -301,7 +301,7 @@ export class OsdManager {
     }
   }
 
-  _setupOsdEffect(osdWindow) {
+  private _findOsdTarget(osdWindow: any): St.Widget | null {
     let targetBox: St.Widget | null = null;
     if (osdWindow._icon && osdWindow._icon.get_parent) {
       targetBox = osdWindow._icon.get_parent();
@@ -318,6 +318,11 @@ export class OsdManager {
         }
       }
     }
+    return targetBox;
+  }
+
+  _setupOsdEffect(osdWindow) {
+    const targetBox = this._findOsdTarget(osdWindow);
 
     if (!targetBox || typeof targetBox.add_style_class_name !== 'function') {
       this._logger.warn('[Liquid Glass] OSD UI container not found.');
