@@ -1149,6 +1149,11 @@ export class UIManager {
         this._isEffectActive = false;
         this._stopAdaptiveColorSampling();
         this._clearAdaptiveStyles();
+        this._disconnectEffectSources();
+        this._restoreMenuActors();
+        this._releaseGlass();
+    }
+    _disconnectEffectSources() {
         for (let sig of this._signals) {
             try {
                 if (sig && sig.id)
@@ -1171,6 +1176,8 @@ export class UIManager {
             this._accentColorSignalId = 0;
             this._interfaceSettings = null;
         }
+    }
+    _restoreMenuActors() {
         if (!this._actorDestroyed)
             this.targetActor.remove_style_class_name('liquid-glass-transparent');
         if (!this._actorDestroyed && this.animActor) {
@@ -1198,6 +1205,8 @@ export class UIManager {
                 this.menu.close(false);
             }
         }
+    }
+    _releaseGlass() {
         if (this.effect) {
             this.effect.cleanup();
             this.effect = null;
