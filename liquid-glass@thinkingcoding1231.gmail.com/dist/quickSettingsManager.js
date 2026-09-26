@@ -518,7 +518,7 @@ export class QuickSettingsManager {
         }
     }
     _laterAdd(callback) {
-        return global.compositor?.get_laters?.().add(Meta.LaterType.BEFORE_REDRAW, callback);
+        return global.compositor?.get_laters?.().add(Meta.LaterType.BEFORE_REDRAW, callback) ?? 0;
     }
     _buildClones() {
         if (!this.bgActor)

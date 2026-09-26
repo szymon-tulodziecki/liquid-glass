@@ -636,7 +636,7 @@ export class QuickSettingsManager {
   }
 
   private _laterAdd(callback: GLib.SourceFunc): number {
-    return global.compositor?.get_laters?.().add(Meta.LaterType.BEFORE_REDRAW, callback);
+    return global.compositor?.get_laters?.().add(Meta.LaterType.BEFORE_REDRAW, callback) ?? 0;
   }
 
   private _buildClones(): void {

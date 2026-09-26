@@ -295,8 +295,12 @@ export class ToggleStyles {
             return false;
         this._logger.log(`[Liquid Glass][toggle-color] releasing .quick-slider pod — theme no longer paints a pill ` +
             `(bg=${JSON.stringify(pill)})`);
-        if (entry.destroyId)
-            pod.disconnect(entry.destroyId);
+        if (entry.destroyId) {
+            try {
+                pod.disconnect(entry.destroyId);
+            }
+            catch { }
+        }
         this._toggleRegions.delete(pod);
         return true;
     }

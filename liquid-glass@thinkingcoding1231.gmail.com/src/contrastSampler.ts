@@ -193,6 +193,11 @@ function _visibleTargets(actors: Clutter.Actor[]): { targets: Clutter.Actor[], r
   return { targets, rects };
 }
 
+function _rootOrMergedRect(root: Clutter.Actor | null, rects: SampleRect[]): SampleRect | null {
+  const rootRect = root ? _getActorRect(root) : null;
+  return rootRect ?? _mergeRects(rects);
+}
+
 function _readSignature(paintSignature?: () => number): number | null {
   if (!paintSignature) return null;
   try {
@@ -333,8 +338,7 @@ export class StageContrastSampler {
     if (targets.length === 0)
       return new Map();
 
-    const rootRect = root ? _getActorRect(root) : null;
-    const merged = config.samplePerElement ? null : rootRect ?? _mergeRects(rects);
+    const merged = config.samplePerElement ? null : _rootOrMergedRect(root, rects);
     const mergedRects = merged ? [merged] : [];
     const sampledRects = config.samplePerElement ? rects : mergedRects;
     const key = _skipKey(config.samplePerElement ? rects : [...sampledRects, ...rects], config);

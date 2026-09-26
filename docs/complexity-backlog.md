@@ -73,6 +73,11 @@ Complexity is Sonar's score (limit 15). Line numbers are from commit `571bba9`.
 | 17 | `QuickSettingsManager._adjustSubmenuPositions` (`src/quickSettingsManager.ts:1533`) | |
 | 16 | `AdaptiveColorTweener._tick` (`src/animation/colors.ts:127`) | |
 
+## Duplication to remove
+
+- The BEFORE_REDRAW frame-sync loop (laterAdd, frameTick with its torn-down and freeze checks, buildClones with the `liquid-glass-bg-actor`/`liquid-box` exclusion scan) is copied in `uiManager.ts`, `notificationManager.ts`, `osdManager.ts` and `dockManager.ts`. `QuickSettingsManager` already uses `_startFrameSync`/`_stopFrameSync`/`_buildClones`. The copies have drifted (`child.name` vs `child.get_name?.()`, `?? 0` or not, freeze re-queue vs return), so move that code into one shared helper next to `animation/frameSync.ts` and use it everywhere.
+- `stepMenuSprings` still steps the position spring, which nothing reads (kept to preserve behaviour exactly). Dropping it, with `_springPos`/`_swiftSpringPos`, is safe once someone confirms on a live session that the open/close animation looks the same.
+
 ## Other reports left on purpose
 
 - `bitwise-operators` in `LiquidEffect.vfunc_paint`: `flags & ACTOR_DIRTY` is a bit test, not a typo.
