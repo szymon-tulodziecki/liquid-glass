@@ -696,21 +696,7 @@ export class QuickSettingsManager {
         let monitorY = monitor?.y ?? 0;
         let screenW = Math.max(1, monitor?.width ?? 1);
         let screenH = Math.max(1, monitor?.height ?? 1);
-        let bgPosX = monitorX;
-        let bgPosY = monitorY;
-        if (this.animActor instanceof Clutter.Actor && this._toggleGlassHost) {
-            this.animActor.set_child_below_sibling(this._toggleGlassHost, null);
-            let [hostAbsX, hostAbsY] = this._toggleGlassHost.get_transformed_position();
-            let [accScaleX, accScaleY] = this._getAccumulatedScale(this._toggleGlassHost);
-            if (Number.isFinite(hostAbsX) && Number.isFinite(hostAbsY)) {
-                this.bgActor.set_scale(1.0 / accScaleX, 1.0 / accScaleY);
-                bgPosX = (monitorX - hostAbsX) / accScaleX;
-                bgPosY = (monitorY - hostAbsY) / accScaleY;
-            }
-        }
-        else {
-            Main.layoutManager.uiGroup.set_child_above_sibling(this.bgActor, null);
-        }
+        const [bgPosX, bgPosY] = this._placeToggleHost(this.bgActor, monitorX, monitorY);
         this.bgActor.set_position(bgPosX, bgPosY);
         const toggles = this._toggleStyles.sync(this.menu?.actor);
         this._ensurePanelContentClone(monitorX, monitorY);
@@ -718,8 +704,35 @@ export class QuickSettingsManager {
             this.bgActor.hide();
             return;
         }
-        let regions = [];
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        const layout = this._resolveToggleRegions(this._collectToggleRegions(toggles, monitorX, monitorY));
+        if (!layout) {
+            this.bgActor.hide();
+            return;
+        }
+        if (!this.bgActor.visible)
+            this.bgActor.show();
+        const TOGGLE_GLASS_OVERLAY_OPACITY = 1.0;
+        let panelOpacity = this.targetActor.get_first_child()?.opacity ?? 255;
+        this.bgActor.opacity = Math.round(panelOpacity * TOGGLE_GLASS_OVERLAY_OPACITY);
+        this.effect?.setGlassRegions(layout.regions);
+        this._applyToggleBounds(layout.minX, layout.minY, layout.maxX - layout.minX, layout.maxY - layout.minY, bgPosX, bgPosY, screenW, screenH);
+        this._syncCaptureLayers(monitorX, monitorY, screenW, screenH);
+    }
+    _placeToggleHost(bgActor, monitorX, monitorY) {
+        if (!(this.animActor instanceof Clutter.Actor) || !this._toggleGlassHost) {
+            Main.layoutManager.uiGroup.set_child_above_sibling(bgActor, null);
+            return [monitorX, monitorY];
+        }
+        this.animActor.set_child_below_sibling(this._toggleGlassHost, null);
+        let [hostAbsX, hostAbsY] = this._toggleGlassHost.get_transformed_position();
+        let [accScaleX, accScaleY] = this._getAccumulatedScale(this._toggleGlassHost);
+        if (!Number.isFinite(hostAbsX) || !Number.isFinite(hostAbsY))
+            return [monitorX, monitorY];
+        bgActor.set_scale(1.0 / accScaleX, 1.0 / accScaleY);
+        return [(monitorX - hostAbsX) / accScaleX, (monitorY - hostAbsY) / accScaleY];
+    }
+    _collectToggleRegions(toggles, monitorX, monitorY) {
+        const layout = { regions: [], minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
         for (let toggle of toggles) {
             if (!toggle.visible || !toggle.mapped)
                 continue;
@@ -734,64 +747,54 @@ export class QuickSettingsManager {
             let hasBase = !!(entry && entry.baseAlpha > 0.02);
             let base = hasBase ? entry.baseColor : this._tintColorArray;
             let baseStrength = hasBase ? this._toggleBaseStrength * entry.baseAlpha : 0.0;
-            regions.push({
+            layout.regions.push({
                 x: regionX, y: regionY, w: regionW, h: regionH,
                 tintR: base[0], tintG: base[1], tintB: base[2],
                 baseStrength,
             });
-            minX = Math.min(minX, regionX);
-            minY = Math.min(minY, regionY);
-            maxX = Math.max(maxX, regionX + regionW);
-            maxY = Math.max(maxY, regionY + regionH);
+            layout.minX = Math.min(layout.minX, regionX);
+            layout.minY = Math.min(layout.minY, regionY);
+            layout.maxX = Math.max(layout.maxX, regionX + regionW);
+            layout.maxY = Math.max(layout.maxY, regionY + regionH);
         }
-        if (regions.length === 0) {
-            let reused = this._takeLastRegions();
-            if (!reused) {
-                this.bgActor.hide();
-                return;
-            }
-            regions = reused.regions;
-            minX = reused.minX;
-            minY = reused.minY;
-            maxX = reused.maxX;
-            maxY = reused.maxY;
-        }
-        else {
-            this._lastGoodRegions = { regions, minX, minY, maxX, maxY };
+        return layout;
+    }
+    _resolveToggleRegions(collected) {
+        if (collected.regions.length > 0) {
+            this._lastGoodRegions = collected;
             this._regionGraceFrames = 0;
+            return collected;
         }
-        if (!this.bgActor.visible)
-            this.bgActor.show();
-        const TOGGLE_GLASS_OVERLAY_OPACITY = 1.0;
-        let panelOpacity = this.targetActor.get_first_child()?.opacity ?? 255;
-        this.bgActor.opacity = Math.round(panelOpacity * TOGGLE_GLASS_OVERLAY_OPACITY);
-        this.effect?.setGlassRegions(regions);
-        let bgW = maxX - minX;
-        let bgH = maxY - minY;
-        let localBgX = minX;
-        let localBgY = minY;
-        if (this._lastBgW !== bgW || this._lastBgH !== bgH ||
-            this._lastBgX !== localBgX || this._lastBgY !== localBgY ||
-            this._lastScreenW !== screenW || this._lastScreenH !== screenH) {
-            this.bgActor.remove_transition('size');
-            this.bgActor.remove_transition('position');
-            this.bgActor.set_position(bgPosX, bgPosY);
-            this.bgActor.set_size(screenW, screenH);
-            this.bgActor.remove_transition('size');
-            this.bgActor.remove_transition('position');
-            this.liquidBox?.set_position(0, 0);
-            this.liquidBox?.set_size(screenW, screenH);
-            const CLIP_PADDING = 200;
-            this.liquidBox?.remove_clip();
-            setClipIfChanged(this.bgActor, localBgX - CLIP_PADDING, localBgY - CLIP_PADDING, bgW + CLIP_PADDING * 2, bgH + CLIP_PADDING * 2);
-            this.effect?.setResolution(screenW, screenH);
-            this._lastBgW = bgW;
-            this._lastBgH = bgH;
-            this._lastBgX = localBgX;
-            this._lastBgY = localBgY;
-            this._lastScreenW = screenW;
-            this._lastScreenH = screenH;
-        }
+        return this._takeLastRegions();
+    }
+    _applyToggleBounds(localBgX, localBgY, bgW, bgH, bgPosX, bgPosY, screenW, screenH) {
+        if (this._lastBgW === bgW && this._lastBgH === bgH &&
+            this._lastBgX === localBgX && this._lastBgY === localBgY &&
+            this._lastScreenW === screenW && this._lastScreenH === screenH)
+            return;
+        const bgActor = this.bgActor;
+        if (!bgActor)
+            return;
+        bgActor.remove_transition('size');
+        bgActor.remove_transition('position');
+        bgActor.set_position(bgPosX, bgPosY);
+        bgActor.set_size(screenW, screenH);
+        bgActor.remove_transition('size');
+        bgActor.remove_transition('position');
+        this.liquidBox?.set_position(0, 0);
+        this.liquidBox?.set_size(screenW, screenH);
+        const CLIP_PADDING = 200;
+        this.liquidBox?.remove_clip();
+        setClipIfChanged(bgActor, localBgX - CLIP_PADDING, localBgY - CLIP_PADDING, bgW + CLIP_PADDING * 2, bgH + CLIP_PADDING * 2);
+        this.effect?.setResolution(screenW, screenH);
+        this._lastBgW = bgW;
+        this._lastBgH = bgH;
+        this._lastBgX = localBgX;
+        this._lastBgY = localBgY;
+        this._lastScreenW = screenW;
+        this._lastScreenH = screenH;
+    }
+    _syncCaptureLayers(monitorX, monitorY, screenW, screenH) {
         this._windowCloneManager?.setOffset(-monitorX, -monitorY);
         syncGlassCaptureClip({
             cloneContainer: this._cloneContainer,
@@ -817,10 +820,25 @@ export class QuickSettingsManager {
             if (this.targetActor !== null)
                 this.bgActor.opacity = this.targetActor.get_first_child()?.opacity ?? 255;
         }
-        let [inW, inH] = this.animActor.get_size();
-        let [outW] = this.targetActor.get_size();
-        inW = Number.isNaN(inW) || inW <= 0 ? (this._stableBaseW || 1) : inW;
-        inH = Number.isNaN(inH) || inH <= 0 ? (this._stableBaseH || 1) : inH;
+        const { w, h, scaleX, scaleY } = this._measurePanel();
+        const [animAbsX, animAbsY] = this._resolvePanelOrigin(w);
+        let bgW = w + (this._glassExpand * 2) + (SHADER_PADDING * 2);
+        let bgH = h + (this._glassExpand * 2) + (SHADER_PADDING * 2);
+        let bgX = animAbsX - this._glassExpand - SHADER_PADDING;
+        let bgY = animAbsY - this._glassExpand - SHADER_PADDING;
+        if (!Number.isNaN(bgX) && !Number.isNaN(bgY) && w >= 1.0 && h >= 1.0) {
+            let monitor = this._getMenuMonitorGeometry();
+            let monitorX = monitor?.x ?? 0;
+            let monitorY = monitor?.y ?? 0;
+            let screenW = Math.max(1, monitor?.width ?? 1);
+            let screenH = Math.max(1, monitor?.height ?? 1);
+            this._applyPanelBounds(bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH);
+            this._syncCaptureLayers(monitorX, monitorY, screenW, screenH);
+        }
+        this._applyGlassScale(scaleX, scaleY);
+        this._adjustSubmenuPositions();
+    }
+    _panelScale() {
         let [scaleX, scaleY] = this.animActor.get_scale();
         if (!this._enableAnimation) {
             let gnomeAnimContainer = this.targetActor.get_first_child();
@@ -833,13 +851,22 @@ export class QuickSettingsManager {
             scaleX *= this.targetActor.get_scale()[0];
             scaleY *= this.targetActor.get_scale()[1];
         }
+        return [scaleX, scaleY];
+    }
+    _themeMarginSize() {
         let themeNode = this.animActor.get_theme_node();
-        let mL = themeNode ? themeNode.get_margin(St.Side.LEFT) : 0;
-        let mR = themeNode ? themeNode.get_margin(St.Side.RIGHT) : 0;
-        let mT = themeNode ? themeNode.get_margin(St.Side.TOP) : 0;
-        let mB = themeNode ? themeNode.get_margin(St.Side.BOTTOM) : 0;
-        let marginW = mL + mR;
-        let marginH = mT + mB;
+        if (!themeNode)
+            return [0, 0];
+        return [themeNode.get_margin(St.Side.LEFT) + themeNode.get_margin(St.Side.RIGHT),
+            themeNode.get_margin(St.Side.TOP) + themeNode.get_margin(St.Side.BOTTOM)];
+    }
+    _measurePanel() {
+        let [inW, inH] = this.animActor.get_size();
+        let [outW] = this.targetActor.get_size();
+        inW = Number.isNaN(inW) || inW <= 0 ? (this._stableBaseW || 1) : inW;
+        inH = Number.isNaN(inH) || inH <= 0 ? (this._stableBaseH || 1) : inH;
+        const [scaleX, scaleY] = this._panelScale();
+        const [marginW, marginH] = this._themeMarginSize();
         let targetW = Math.round(inW);
         let targetH = Math.round(inH);
         if (Math.abs(inW - outW) <= 2 && marginW > 0) {
@@ -848,88 +875,67 @@ export class QuickSettingsManager {
         }
         this._stableBaseW = targetW;
         this._stableBaseH = targetH;
-        let w = Math.max(1, this._stableBaseW * scaleX);
-        let h = Math.max(1, this._stableBaseH * scaleY);
-        let [animAbsX, animAbsY] = this.animActor.get_transformed_position();
-        if (Number.isNaN(animAbsX) || Number.isNaN(animAbsY)) {
-            if (this._lastValidAnimAbsX !== undefined && this._lastValidAnimAbsY !== undefined) {
-                animAbsX = this._lastValidAnimAbsX;
-                animAbsY = this._lastValidAnimAbsY;
-            }
-            else {
-                let monitor = Main.layoutManager.primaryMonitor;
-                if (monitor) {
-                    animAbsX = (monitor.width / 2) - (w / 2);
-                    animAbsY = (Main.panel.height || 27) + (this._menuYoffset ?? 0);
-                }
-                else {
-                    animAbsX = 0;
-                    animAbsY = 0;
-                }
-            }
-        }
-        else {
+        return {
+            w: Math.max(1, this._stableBaseW * scaleX),
+            h: Math.max(1, this._stableBaseH * scaleY),
+            scaleX,
+            scaleY,
+        };
+    }
+    _resolvePanelOrigin(w) {
+        const [animAbsX, animAbsY] = this.animActor.get_transformed_position();
+        if (!Number.isNaN(animAbsX) && !Number.isNaN(animAbsY)) {
             this._lastValidAnimAbsX = animAbsX;
             this._lastValidAnimAbsY = animAbsY;
+            return [animAbsX, animAbsY];
         }
-        let bgW = w + (this._glassExpand * 2) + (SHADER_PADDING * 2);
-        let bgH = h + (this._glassExpand * 2) + (SHADER_PADDING * 2);
-        let bgX = animAbsX - this._glassExpand - SHADER_PADDING;
-        let bgY = animAbsY - this._glassExpand - SHADER_PADDING;
-        if (!Number.isNaN(bgX) && !Number.isNaN(bgY) && w >= 1.0 && h >= 1.0) {
-            let monitor = this._getMenuMonitorGeometry();
-            let monitorX = monitor?.x ?? 0;
-            let monitorY = monitor?.y ?? 0;
-            let screenW = Math.max(1, monitor?.width ?? 1);
-            let screenH = Math.max(1, monitor?.height ?? 1);
-            let localBgX = bgX - monitorX;
-            let localBgY = bgY - monitorY;
-            if (this._lastBgW !== bgW || this._lastBgH !== bgH ||
-                this._lastBgX !== bgX || this._lastBgY !== bgY ||
-                this._lastScreenW !== screenW || this._lastScreenH !== screenH) {
-                this.bgActor.remove_transition('size');
-                this.bgActor.remove_transition('position');
-                this.bgActor.set_position(monitorX, monitorY);
-                this.bgActor.set_size(screenW, screenH);
-                this.bgActor.remove_transition('size');
-                this.bgActor.remove_transition('position');
-                this.liquidBox?.set_position(0, 0);
-                this.liquidBox?.set_size(screenW, screenH);
-                const CLIP_PADDING = 200;
-                this.liquidBox?.remove_clip();
-                setClipIfChanged(this.bgActor, localBgX - CLIP_PADDING, localBgY - CLIP_PADDING, bgW + CLIP_PADDING * 2, bgH + CLIP_PADDING * 2);
-                const SHADOW_MAX_RADIUS = CLIP_PADDING - 20;
-                this.effect?.setShadowMaxRadius(SHADOW_MAX_RADIUS);
-                this.effect?.setResolution(screenW, screenH);
-                this.effect?.setGlassGeometry(localBgX, localBgY, bgW, bgH);
-                this._lastBgW = bgW;
-                this._lastBgH = bgH;
-                this._lastBgX = bgX;
-                this._lastBgY = bgY;
-                this._lastScreenW = screenW;
-                this._lastScreenH = screenH;
-            }
-            this._windowCloneManager?.setOffset(-monitorX, -monitorY);
-            syncGlassCaptureClip({
-                cloneContainer: this._cloneContainer,
-                effect: this.effect,
-                originX: monitorX,
-                originY: monitorY,
-                uiSampler: this._uiSampler,
-                windowCloneManager: this._windowCloneManager,
-            });
-            this._uiSampler?.refresh();
-            this._uiSampler?.sync(monitorX, monitorY, screenW, screenH);
-            this._windowCloneManager?.sync();
+        if (this._lastValidAnimAbsX !== undefined && this._lastValidAnimAbsY !== undefined)
+            return [this._lastValidAnimAbsX, this._lastValidAnimAbsY];
+        const monitor = Main.layoutManager.primaryMonitor;
+        if (!monitor)
+            return [0, 0];
+        return [(monitor.width / 2) - (w / 2), (Main.panel.height || 27) + (this._menuYoffset ?? 0)];
+    }
+    _applyPanelBounds(bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH) {
+        if (this._lastBgW === bgW && this._lastBgH === bgH &&
+            this._lastBgX === bgX && this._lastBgY === bgY &&
+            this._lastScreenW === screenW && this._lastScreenH === screenH)
+            return;
+        const bgActor = this.bgActor;
+        if (!bgActor)
+            return;
+        let localBgX = bgX - monitorX;
+        let localBgY = bgY - monitorY;
+        bgActor.remove_transition('size');
+        bgActor.remove_transition('position');
+        bgActor.set_position(monitorX, monitorY);
+        bgActor.set_size(screenW, screenH);
+        bgActor.remove_transition('size');
+        bgActor.remove_transition('position');
+        this.liquidBox?.set_position(0, 0);
+        this.liquidBox?.set_size(screenW, screenH);
+        const CLIP_PADDING = 200;
+        this.liquidBox?.remove_clip();
+        setClipIfChanged(bgActor, localBgX - CLIP_PADDING, localBgY - CLIP_PADDING, bgW + CLIP_PADDING * 2, bgH + CLIP_PADDING * 2);
+        const SHADOW_MAX_RADIUS = CLIP_PADDING - 20;
+        this.effect?.setShadowMaxRadius(SHADOW_MAX_RADIUS);
+        this.effect?.setResolution(screenW, screenH);
+        this.effect?.setGlassGeometry(localBgX, localBgY, bgW, bgH);
+        this._lastBgW = bgW;
+        this._lastBgH = bgH;
+        this._lastBgX = bgX;
+        this._lastBgY = bgY;
+        this._lastScreenW = screenW;
+        this._lastScreenH = screenH;
+    }
+    _applyGlassScale(scaleX, scaleY) {
+        if (!this.effect || typeof this.effect.setCornerRadius !== 'function')
+            return;
+        let currentScale = Math.min(scaleX, scaleY);
+        this.effect.setCornerRadius(this._cornerRadius * currentScale);
+        if (typeof this.effect.setAnimationScale === 'function') {
+            this.effect.setAnimationScale(currentScale);
         }
-        if (this.effect && typeof this.effect.setCornerRadius === 'function') {
-            let currentScale = Math.min(scaleX, scaleY);
-            this.effect.setCornerRadius(this._cornerRadius * currentScale);
-            if (typeof this.effect.setAnimationScale === 'function') {
-                this.effect.setAnimationScale(currentScale);
-            }
-        }
-        this._adjustSubmenuPositions();
     }
     _updateResolution() {
         if (!this.bgActor || !this.effect)
