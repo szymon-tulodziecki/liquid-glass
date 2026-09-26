@@ -467,6 +467,24 @@ export class UILayerSampler {
             if (!first)
                 this._reevaluateBmsClones();
         }
+        const dynamicExclusions = this._dynamicExclusions();
+        for (const child of children) {
+            try {
+                if (!this._isCloneCandidate(child, dynamicExclusions))
+                    continue;
+                seen.add(child);
+                if (!this._clones.has(child) && !this._addSourceClone(child))
+                    seen.delete(child);
+            }
+            catch (e) {
+                reportFrameLoopError('UILayerSampler.refresh', e);
+            }
+        }
+        this._pruneSourceClones(seen);
+        this._reportClonedSet();
+        this._reportClonedWindowGroups();
+    }
+    _dynamicExclusions() {
         const dynamicExclusions = new Set();
         for (const src of this._ancestorExclusionSources) {
             try {
@@ -478,88 +496,88 @@ export class UILayerSampler {
             }
             catch { }
         }
-        for (const child of children) {
-            try {
-                if (child._isDisposed)
-                    continue;
-                if (!isActorValid(child))
-                    continue;
-                if (child === this._dragActor)
-                    continue;
-                if (child === this._selfActor || child === this._selfRoot)
-                    continue;
-                if (child === Main.layoutManager._backgroundGroup)
-                    continue;
-                if (child === getSharedBackgroundSource())
-                    continue;
-                if (this._extraExclusions.has(child))
-                    continue;
-                if (dynamicExclusions.has(child))
-                    continue;
-                if (!child.visible || !child.mapped)
-                    continue;
-                if (!this._clones.has(child) && this._containsOtherLiquidGlassRoot(child)) {
-                    utilsLog(`[Liquid Glass][ui-sampler] permanent exclusion of uiGroup child ` +
-                        `name="${child.name ?? '(unnamed)'}" ` +
-                        `type=${child.constructor?.name} ` +
-                        `(nested liquid-glass root found during deep scan)`);
-                    this.addExclusion(child);
-                    continue;
-                }
-                seen.add(child);
-                if (!this._clones.has(child)) {
-                    const bmsTarget = this._findBmsDescendant(child);
-                    if (bmsTarget && _bmsMode === BMS_MODE.SKIP) {
-                        seen.delete(child);
-                        continue;
-                    }
-                    let sourceClone = null;
-                    if (bmsTarget && _bmsMode === BMS_MODE.REPLICATE) {
-                        sourceClone = this._createBmsReplicaActor(child);
-                        if (!sourceClone) {
-                            utilsLog(`[Liquid Glass][ui-sampler:${this._label}] BMS replica ` +
-                                `could not be built for name="${child.name ?? '(unnamed)'}"; ` +
-                                `leaving it out of the glass rather than cloning BMS's target`);
-                            seen.delete(child);
-                            continue;
-                        }
-                    }
-                    if (!sourceClone && bmsTarget && _bmsMode === BMS_MODE.SNAPSHOT) {
-                        sourceClone = this._createSelfExcludingSnapshotActor(child);
-                        if (!sourceClone && this._useCaptureFixForBms) {
-                            sourceClone = this._createExistingEffectBlitActor(child);
-                        }
-                    }
-                    if (!sourceClone) {
-                        sourceClone = new UnpickableClone({ source: child });
-                    }
-                    this._bmsStateAtClone.set(child, !!bmsTarget);
-                    sourceClone.set_name(`${child.name}-sourceClone`);
-                    sourceClone.connect('destroy', () => {
-                        this._clones.delete(child);
-                    });
-                    this._uiClonesContainer?.add_child(sourceClone);
-                    this._clones.set(child, sourceClone);
-                    if (!this._sourceDestroyIds.has(child)) {
-                        this._sourceDestroyIds.set(child, child.connect('destroy', () => {
-                            this._sourceDestroyIds.delete(child);
-                            this._bmsStateAtClone.delete(child);
-                            this._existingEffectCache.delete(child);
-                            const clone = this._clones.get(child);
-                            this._clones.delete(child);
-                            try {
-                                clone?.destroy();
-                            }
-                            catch { }
-                        }));
-                    }
-                    this._insertCloneInZOrder(child, sourceClone);
-                }
-            }
-            catch (e) {
-                reportFrameLoopError('UILayerSampler.refresh', e);
+        return dynamicExclusions;
+    }
+    _isCloneCandidate(child, dynamicExclusions) {
+        if (child._isDisposed)
+            return false;
+        if (!isActorValid(child))
+            return false;
+        if (child === this._dragActor)
+            return false;
+        if (child === this._selfActor || child === this._selfRoot)
+            return false;
+        if (child === Main.layoutManager._backgroundGroup)
+            return false;
+        if (child === getSharedBackgroundSource())
+            return false;
+        if (this._extraExclusions.has(child))
+            return false;
+        if (dynamicExclusions.has(child))
+            return false;
+        if (!child.visible || !child.mapped)
+            return false;
+        if (!this._clones.has(child) && this._containsOtherLiquidGlassRoot(child)) {
+            utilsLog(`[Liquid Glass][ui-sampler] permanent exclusion of uiGroup child ` +
+                `name="${child.name ?? '(unnamed)'}" ` +
+                `type=${child.constructor?.name} ` +
+                `(nested liquid-glass root found during deep scan)`);
+            this.addExclusion(child);
+            return false;
+        }
+        return true;
+    }
+    _addSourceClone(child) {
+        const bmsTarget = this._findBmsDescendant(child);
+        if (bmsTarget && _bmsMode === BMS_MODE.SKIP) {
+            return null;
+        }
+        let sourceClone = null;
+        if (bmsTarget && _bmsMode === BMS_MODE.REPLICATE) {
+            sourceClone = this._createBmsReplicaActor(child);
+            if (!sourceClone) {
+                utilsLog(`[Liquid Glass][ui-sampler:${this._label}] BMS replica ` +
+                    `could not be built for name="${child.name ?? '(unnamed)'}"; ` +
+                    `leaving it out of the glass rather than cloning BMS's target`);
+                return null;
             }
         }
+        if (!sourceClone && bmsTarget && _bmsMode === BMS_MODE.SNAPSHOT) {
+            sourceClone = this._createSelfExcludingSnapshotActor(child);
+            if (!sourceClone && this._useCaptureFixForBms) {
+                sourceClone = this._createExistingEffectBlitActor(child);
+            }
+        }
+        if (!sourceClone) {
+            sourceClone = new UnpickableClone({ source: child });
+        }
+        this._bmsStateAtClone.set(child, !!bmsTarget);
+        sourceClone.set_name(`${child.name}-sourceClone`);
+        sourceClone.connect('destroy', () => {
+            this._clones.delete(child);
+        });
+        this._uiClonesContainer?.add_child(sourceClone);
+        this._clones.set(child, sourceClone);
+        this._trackSourceDestroy(child);
+        this._insertCloneInZOrder(child, sourceClone);
+        return sourceClone;
+    }
+    _trackSourceDestroy(child) {
+        if (!this._sourceDestroyIds.has(child)) {
+            this._sourceDestroyIds.set(child, child.connect('destroy', () => {
+                this._sourceDestroyIds.delete(child);
+                this._bmsStateAtClone.delete(child);
+                this._existingEffectCache.delete(child);
+                const clone = this._clones.get(child);
+                this._clones.delete(child);
+                try {
+                    clone?.destroy();
+                }
+                catch { }
+            }));
+        }
+    }
+    _pruneSourceClones(seen) {
         for (const [actor, sourceClone] of this._clones) {
             if (!seen.has(actor)) {
                 try {
@@ -580,8 +598,6 @@ export class UILayerSampler {
             this._bmsStateAtClone.delete(actor);
             this._existingEffectCache.delete(actor);
         }
-        this._reportClonedSet();
-        this._reportClonedWindowGroups();
     }
     static _stageToLocal(actor, stageX, stageY) {
         try {
