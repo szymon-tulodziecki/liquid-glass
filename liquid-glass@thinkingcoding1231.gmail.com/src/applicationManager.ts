@@ -1467,38 +1467,8 @@ export class ApplicationManager {
       state.remapReallocLaterId = 0;
     }
 
-    if (state.surfaceActor) {
-      try {
-        if (isActorValid(state.surfaceActor)) {
-          state.surfaceActor.opacity = state.originalOpacity;
-        }
-      } catch {
-      }
-    }
-
-    if (state.signals) {
-      state.signals.forEach(sig => {
-        try {
-          sig.obj.disconnect(sig.id);
-        } catch { }
-      });
-      state.signals = [];
-    }
-    if (state.constraints) {
-      if (isActorValid(state.bgClone))
-        state.bgClone.remove_constraint(state.constraints.bg);
-      if (isActorValid(state.windowsContainer))
-        state.windowsContainer.remove_constraint(state.constraints.windows);
-      if (isActorValid(state.baseClone))
-        state.baseClone.remove_constraint(state.constraints.base);
-      if (isActorValid(state.baseWindowsContainer))
-        state.baseWindowsContainer.remove_constraint(state.constraints.baseWindows);
-
-      state.constraints.bg.source = null;
-      state.constraints.windows.source = null;
-      state.constraints.base.source = null;
-      state.constraints.baseWindows.source = null;
-    }
+    this._restoreWindowSurface(state);
+    this._releaseWindowConstraints(state);
 
     state.clones.forEach(clone => { if (isActorValid(clone)) clone.destroy(); });
     state.clones.clear();
@@ -1520,5 +1490,42 @@ export class ApplicationManager {
 
     if (isActorValid(state.cornerOverlay))
       state.cornerOverlay.destroy();
+  }
+  private _restoreWindowSurface(state: WindowState): void {
+    if (state.surfaceActor) {
+      try {
+        if (isActorValid(state.surfaceActor)) {
+          state.surfaceActor.opacity = state.originalOpacity;
+        }
+      } catch {
+      }
+    }
+
+    if (state.signals) {
+      state.signals.forEach(sig => {
+        try {
+          sig.obj.disconnect(sig.id);
+        } catch { }
+      });
+      state.signals = [];
+    }
+  }
+
+  private _releaseWindowConstraints(state: WindowState): void {
+    if (state.constraints) {
+      if (isActorValid(state.bgClone))
+        state.bgClone.remove_constraint(state.constraints.bg);
+      if (isActorValid(state.windowsContainer))
+        state.windowsContainer.remove_constraint(state.constraints.windows);
+      if (isActorValid(state.baseClone))
+        state.baseClone.remove_constraint(state.constraints.base);
+      if (isActorValid(state.baseWindowsContainer))
+        state.baseWindowsContainer.remove_constraint(state.constraints.baseWindows);
+
+      state.constraints.bg.source = null;
+      state.constraints.windows.source = null;
+      state.constraints.base.source = null;
+      state.constraints.baseWindows.source = null;
+    }
   }
 }

@@ -1275,38 +1275,8 @@ export class ApplicationManager {
             catch { }
             state.remapReallocLaterId = 0;
         }
-        if (state.surfaceActor) {
-            try {
-                if (isActorValid(state.surfaceActor)) {
-                    state.surfaceActor.opacity = state.originalOpacity;
-                }
-            }
-            catch {
-            }
-        }
-        if (state.signals) {
-            state.signals.forEach(sig => {
-                try {
-                    sig.obj.disconnect(sig.id);
-                }
-                catch { }
-            });
-            state.signals = [];
-        }
-        if (state.constraints) {
-            if (isActorValid(state.bgClone))
-                state.bgClone.remove_constraint(state.constraints.bg);
-            if (isActorValid(state.windowsContainer))
-                state.windowsContainer.remove_constraint(state.constraints.windows);
-            if (isActorValid(state.baseClone))
-                state.baseClone.remove_constraint(state.constraints.base);
-            if (isActorValid(state.baseWindowsContainer))
-                state.baseWindowsContainer.remove_constraint(state.constraints.baseWindows);
-            state.constraints.bg.source = null;
-            state.constraints.windows.source = null;
-            state.constraints.base.source = null;
-            state.constraints.baseWindows.source = null;
-        }
+        this._restoreWindowSurface(state);
+        this._releaseWindowConstraints(state);
         state.clones.forEach(clone => { if (isActorValid(clone))
             clone.destroy(); });
         state.clones.clear();
@@ -1325,5 +1295,41 @@ export class ApplicationManager {
             state.baseActor.destroy();
         if (isActorValid(state.cornerOverlay))
             state.cornerOverlay.destroy();
+    }
+    _restoreWindowSurface(state) {
+        if (state.surfaceActor) {
+            try {
+                if (isActorValid(state.surfaceActor)) {
+                    state.surfaceActor.opacity = state.originalOpacity;
+                }
+            }
+            catch {
+            }
+        }
+        if (state.signals) {
+            state.signals.forEach(sig => {
+                try {
+                    sig.obj.disconnect(sig.id);
+                }
+                catch { }
+            });
+            state.signals = [];
+        }
+    }
+    _releaseWindowConstraints(state) {
+        if (state.constraints) {
+            if (isActorValid(state.bgClone))
+                state.bgClone.remove_constraint(state.constraints.bg);
+            if (isActorValid(state.windowsContainer))
+                state.windowsContainer.remove_constraint(state.constraints.windows);
+            if (isActorValid(state.baseClone))
+                state.baseClone.remove_constraint(state.constraints.base);
+            if (isActorValid(state.baseWindowsContainer))
+                state.baseWindowsContainer.remove_constraint(state.constraints.baseWindows);
+            state.constraints.bg.source = null;
+            state.constraints.windows.source = null;
+            state.constraints.base.source = null;
+            state.constraints.baseWindows.source = null;
+        }
     }
 }
