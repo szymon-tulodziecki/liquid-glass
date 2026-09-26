@@ -9,8 +9,6 @@ export function syncDamageHooks(hooks, sources, onDamage) {
         }
         catch { }
     }
-    if (hooks.size <= sources.size)
-        return;
     for (const [source, id] of [...hooks]) {
         if (sources.has(source))
             continue;
@@ -21,4 +19,14 @@ export function syncDamageHooks(hooks, sources, onDamage) {
         catch { }
         hooks.delete(source);
     }
+}
+export function releaseDamageHooks(hooks) {
+    for (const [source, id] of hooks) {
+        try {
+            if (isActorValid(source))
+                source.disconnect(id);
+        }
+        catch { }
+    }
+    hooks.clear();
 }

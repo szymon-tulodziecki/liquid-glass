@@ -4,7 +4,7 @@ import { UnpickableActor, UnpickableClone } from '../actors/unpickable.js';
 import { isActorValid } from '../actors/lifecycle.js';
 import { setTranslationIfChanged, setClipIfChanged, setCloneCulled, setSizeIfChanged, setScaleIfChanged, setPivotIfChanged, setOpacityIfChanged, isDiffWritesEnabled } from '../actors/writes.js';
 import { getNestedGlassFix } from './nestedGlass.js';
-import { syncDamageHooks } from './damageHooks.js';
+import { syncDamageHooks, releaseDamageHooks } from './damageHooks.js';
 import { reportClonedWindowActors, releaseClonedWindowActors } from './windowCulling.js';
 import { getWindowActors } from '../actors/windows.js';
 import { getAllocatedSize, rectsIntersect } from '../actors/geometry.js';
@@ -102,16 +102,7 @@ export class WindowCloneManager {
         });
     }
     _releaseDamageHooks() {
-        if (this._damageHooks.size === 0)
-            return;
-        for (const [src, id] of this._damageHooks) {
-            try {
-                if (isActorValid(src))
-                    src.disconnect(id);
-            }
-            catch { }
-        }
-        this._damageHooks.clear();
+        releaseDamageHooks(this._damageHooks);
     }
     sync() {
         this._syncDamageHooks();

@@ -17,7 +17,7 @@ import { setTranslationIfChanged, setSizeIfChanged, setScaleIfChanged, setOpacit
 import { isCullSiteEnabled } from './capture/options.js';
 import { createBackgroundMirror } from './capture/background.js';
 import { reportClonedWindowActors, releaseClonedWindowActors } from './capture/windowCulling.js';
-import { syncDamageHooks } from './capture/damageHooks.js';
+import { syncDamageHooks, releaseDamageHooks } from './capture/damageHooks.js';
 const GLASS_MIN_MARGIN = 10;
 const SHADOW_MARGIN_HEADROOM = 20;
 const GLASS_MAX_MARGIN = 100 + SHADOW_MARGIN_HEADROOM;
@@ -935,11 +935,9 @@ export class ApplicationManager {
                 stale = true;
             }
         }
-        if (seen.size > state.clones.size) {
-            for (const src of [...seen.keys()])
-                if (!state.clones.has(src))
-                    seen.delete(src);
-        }
+        for (const src of [...seen.keys()])
+            if (!state.clones.has(src))
+                seen.delete(src);
         return stale;
     }
     _syncDamageHooks(state) {
@@ -957,14 +955,7 @@ export class ApplicationManager {
     _releaseDamageHooks(state) {
         if (!state.damageHooks)
             return;
-        for (const [src, id] of state.damageHooks) {
-            try {
-                if (isActorValid(src))
-                    src.disconnect(id);
-            }
-            catch { }
-        }
-        state.damageHooks.clear();
+        releaseDamageHooks(state.damageHooks);
         state.damageHooks = undefined;
     }
     _syncClones(state) {
