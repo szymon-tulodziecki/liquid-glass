@@ -583,17 +583,7 @@ export class OsdManager {
   }
 
   _cleanupOsdState(state: OsdState) {
-    if (state.osdWindow && state._destroyId) {
-      try { state.osdWindow.disconnect(state._destroyId); } catch { }
-      state._destroyId = 0;
-    }
-
-    if (state.targetBox) {
-      try {
-        state.targetBox.remove_style_class_name('liquid-glass-transparent');
-        state.targetBox.translation_y = 0;
-      } catch { }
-    }
+    this._restoreOsdTarget(state);
 
     if (state.effect) {
       try { state.effect.cleanup(); } catch { }
@@ -612,6 +602,20 @@ export class OsdManager {
     state._uiSampler = null;
     try { state._windowCloneManager?.destroy(); } catch { }
     state._windowCloneManager = null;
+  }
+
+  private _restoreOsdTarget(state: OsdState): void {
+    if (state.osdWindow && state._destroyId) {
+      try { state.osdWindow.disconnect(state._destroyId); } catch { }
+      state._destroyId = 0;
+    }
+
+    if (state.targetBox) {
+      try {
+        state.targetBox.remove_style_class_name('liquid-glass-transparent');
+        state.targetBox.translation_y = 0;
+      } catch { }
+    }
   }
 
   private _teardownStep(name: string, fn: () => void): void {
