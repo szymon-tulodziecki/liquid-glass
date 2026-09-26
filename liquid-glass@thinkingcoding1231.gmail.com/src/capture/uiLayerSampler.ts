@@ -773,6 +773,14 @@ export class UILayerSampler {
         contAbsY = Number.isNaN(ty) ? 0 : ty;
       } catch { }
     }
+    this._syncCloneContainer(contAbsX, contAbsY);
+
+    for (const [actor, sourceClone] of this._clones) {
+      this.syncProperties(actor, sourceClone, contW, contH, contAbsX, contAbsY);
+    }
+  }
+
+  private _syncCloneContainer(contAbsX: number, contAbsY: number): void {
     try {
       const parent = this._uiClonesContainer?.get_parent();
       if (parent && this._uiClonesContainer) {
@@ -788,10 +796,6 @@ export class UILayerSampler {
       if (this._uiClonesContainer.x !== 0 || this._uiClonesContainer.y !== 0)
         this._uiClonesContainer.set_position(0, 0);
       setTranslationIfChanged(this._uiClonesContainer, -contAbsX, -contAbsY);
-    }
-
-    for (const [actor, sourceClone] of this._clones) {
-      this.syncProperties(actor, sourceClone, contW, contH, contAbsX, contAbsY);
     }
   }
 
