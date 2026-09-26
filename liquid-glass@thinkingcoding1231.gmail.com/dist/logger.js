@@ -1,4 +1,3 @@
-// Logger class. Used by other classes and initialized in extension.js.
 export class Logger {
     _settings;
     _outputLogs;
@@ -16,6 +15,9 @@ export class Logger {
         connectSetting('output-logs', () => {
             this._outputLogs = this._settings.get_boolean('output-logs');
         });
+    }
+    get enabled() {
+        return this._outputLogs;
     }
     log(...args) {
         if (!this._outputLogs)
