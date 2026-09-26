@@ -248,21 +248,7 @@ export class UILayerSampler {
   private _syncBmsReplica(source: Clutter.Actor, replica: any): void {
     try {
       const parts: { src: Clutter.Actor, clone: Clutter.Actor }[] = replica.parts;
-      let panelRect: [number, number, number, number] | null = null;
-
-      for (const { src, clone } of parts) {
-        if (!isActorValid(src) || !isActorValid(clone)) continue;
-        const [w, h] = getAllocatedSize(src);
-        if (!(w > 0) || !(h > 0)) {
-          setActorVisible(clone, false);
-          continue;
-        }
-        setPositionIfChanged(clone, src.x, src.y);
-        setSizeIfChanged(clone, w, h);
-        setOpacityIfChanged(clone, src.opacity);
-        setActorVisible(clone, src.visible && src.mapped);
-        if (!panelRect) panelRect = [src.x, src.y, w, h];
-      }
+      const panelRect = this._syncReplicaParts(parts);
 
       const blurWidget: Clutter.Actor = replica.blurWidget;
       if (isActorValid(blurWidget) && panelRect) {
@@ -274,29 +260,49 @@ export class UILayerSampler {
         setActorVisible(blurWidget, true);
 
         const src = replica.bmsTarget as Clutter.Actor;
-        let ours = blurWidget.get_effects()[0] as any;
-        if (ours && isActorValid(src)) {
-          const theirs = (src.get_effects() ?? []).find(
-            (e: any) => typeof e?.radius === 'number') as any;
-          if (theirs) {
-            if (Object.getPrototypeOf(ours)?.constructor !==
-              Object.getPrototypeOf(theirs)?.constructor) {
-              try {
-                blurWidget.remove_effect(ours);
-                blurWidget.add_effect(this._buildReplicaBlurEffect(src));
-                ours = blurWidget.get_effects()[0] as any;
-              } catch { }
-            }
-
-            if (ours.radius !== theirs.radius) ours.radius = theirs.radius;
-            if (ours.brightness !== theirs.brightness) ours.brightness = theirs.brightness;
-          }
-        }
+        this._syncReplicaBlur(blurWidget, src);
       }
       this._reportReplicaGeometry(source, replica);
     } catch (e) {
       reportFrameLoopError('UILayerSampler._syncBmsReplica', e);
     }
+  }
+
+  private _syncReplicaParts(parts: { src: Clutter.Actor, clone: Clutter.Actor }[]): [number, number, number, number] | null {
+    let panelRect: [number, number, number, number] | null = null;
+
+    for (const { src, clone } of parts) {
+      if (!isActorValid(src) || !isActorValid(clone)) continue;
+      const [w, h] = getAllocatedSize(src);
+      if (!(w > 0) || !(h > 0)) {
+        setActorVisible(clone, false);
+        continue;
+      }
+      setPositionIfChanged(clone, src.x, src.y);
+      setSizeIfChanged(clone, w, h);
+      setOpacityIfChanged(clone, src.opacity);
+      setActorVisible(clone, src.visible && src.mapped);
+      if (!panelRect) panelRect = [src.x, src.y, w, h];
+    }
+    return panelRect;
+  }
+
+  private _syncReplicaBlur(blurWidget: Clutter.Actor, src: Clutter.Actor): void {
+    let ours = blurWidget.get_effects()[0] as any;
+    if (!ours || !isActorValid(src)) return;
+    const theirs = (src.get_effects() ?? []).find(
+      (e: any) => typeof e?.radius === 'number') as any;
+    if (!theirs) return;
+    if (Object.getPrototypeOf(ours)?.constructor !==
+      Object.getPrototypeOf(theirs)?.constructor) {
+      try {
+        blurWidget.remove_effect(ours);
+        blurWidget.add_effect(this._buildReplicaBlurEffect(src));
+        ours = blurWidget.get_effects()[0] as any;
+      } catch { }
+    }
+    if (ours.radius !== theirs.radius) ours.radius = theirs.radius;
+    if (ours.brightness !== theirs.brightness) ours.brightness = theirs.brightness;
   }
 
   private _reportReplicaGeometry(source: Clutter.Actor, replica: any): void {

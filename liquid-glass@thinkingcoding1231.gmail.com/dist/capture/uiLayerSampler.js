@@ -222,22 +222,7 @@ export class UILayerSampler {
     _syncBmsReplica(source, replica) {
         try {
             const parts = replica.parts;
-            let panelRect = null;
-            for (const { src, clone } of parts) {
-                if (!isActorValid(src) || !isActorValid(clone))
-                    continue;
-                const [w, h] = getAllocatedSize(src);
-                if (!(w > 0) || !(h > 0)) {
-                    setActorVisible(clone, false);
-                    continue;
-                }
-                setPositionIfChanged(clone, src.x, src.y);
-                setSizeIfChanged(clone, w, h);
-                setOpacityIfChanged(clone, src.opacity);
-                setActorVisible(clone, src.visible && src.mapped);
-                if (!panelRect)
-                    panelRect = [src.x, src.y, w, h];
-            }
+            const panelRect = this._syncReplicaParts(parts);
             const blurWidget = replica.blurWidget;
             if (isActorValid(blurWidget) && panelRect) {
                 replica.panelRect = panelRect;
@@ -246,31 +231,53 @@ export class UILayerSampler {
                 setSizeIfChanged(blurWidget, panelRect[2], panelRect[3]);
                 setActorVisible(blurWidget, true);
                 const src = replica.bmsTarget;
-                let ours = blurWidget.get_effects()[0];
-                if (ours && isActorValid(src)) {
-                    const theirs = (src.get_effects() ?? []).find((e) => typeof e?.radius === 'number');
-                    if (theirs) {
-                        if (Object.getPrototypeOf(ours)?.constructor !==
-                            Object.getPrototypeOf(theirs)?.constructor) {
-                            try {
-                                blurWidget.remove_effect(ours);
-                                blurWidget.add_effect(this._buildReplicaBlurEffect(src));
-                                ours = blurWidget.get_effects()[0];
-                            }
-                            catch { }
-                        }
-                        if (ours.radius !== theirs.radius)
-                            ours.radius = theirs.radius;
-                        if (ours.brightness !== theirs.brightness)
-                            ours.brightness = theirs.brightness;
-                    }
-                }
+                this._syncReplicaBlur(blurWidget, src);
             }
             this._reportReplicaGeometry(source, replica);
         }
         catch (e) {
             reportFrameLoopError('UILayerSampler._syncBmsReplica', e);
         }
+    }
+    _syncReplicaParts(parts) {
+        let panelRect = null;
+        for (const { src, clone } of parts) {
+            if (!isActorValid(src) || !isActorValid(clone))
+                continue;
+            const [w, h] = getAllocatedSize(src);
+            if (!(w > 0) || !(h > 0)) {
+                setActorVisible(clone, false);
+                continue;
+            }
+            setPositionIfChanged(clone, src.x, src.y);
+            setSizeIfChanged(clone, w, h);
+            setOpacityIfChanged(clone, src.opacity);
+            setActorVisible(clone, src.visible && src.mapped);
+            if (!panelRect)
+                panelRect = [src.x, src.y, w, h];
+        }
+        return panelRect;
+    }
+    _syncReplicaBlur(blurWidget, src) {
+        let ours = blurWidget.get_effects()[0];
+        if (!ours || !isActorValid(src))
+            return;
+        const theirs = (src.get_effects() ?? []).find((e) => typeof e?.radius === 'number');
+        if (!theirs)
+            return;
+        if (Object.getPrototypeOf(ours)?.constructor !==
+            Object.getPrototypeOf(theirs)?.constructor) {
+            try {
+                blurWidget.remove_effect(ours);
+                blurWidget.add_effect(this._buildReplicaBlurEffect(src));
+                ours = blurWidget.get_effects()[0];
+            }
+            catch { }
+        }
+        if (ours.radius !== theirs.radius)
+            ours.radius = theirs.radius;
+        if (ours.brightness !== theirs.brightness)
+            ours.brightness = theirs.brightness;
     }
     _reportReplicaGeometry(source, replica) {
         if (!utilsLogEnabled())
