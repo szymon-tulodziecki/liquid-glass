@@ -10,7 +10,7 @@ import Meta from 'gi://Meta';
 import { LiquidEffect } from './liquidEffect.js';
 import { StageContrastSampler, AdaptiveContrastConfig } from './contrastSampler.js';
 import Gio from 'gi://Gio';
-import { UnpickableActor, UnpickableClone, LayoutOpaqueActor, UnpickableStyledWidget } from './actors/unpickable.js';
+import { UnpickableActor, LayoutOpaqueActor, UnpickableStyledWidget } from './actors/unpickable.js';
 import { UILayerSampler } from './capture/uiLayerSampler.js';
 import { WindowCloneManager } from './capture/windowClones.js';
 import { reportFrameLoopError } from './diagnostics/logging.js';
@@ -449,66 +449,8 @@ export class QuickSettingsManager {
 
     this.bgActor.hide();
 
-    const laterAdd = (laterType: Meta.LaterType, callback: GLib.SourceFunc) => {
-      return global.compositor?.get_laters?.().add(laterType, callback);
-    };
-    const laterRemove = (id: number) => {
-      if (!id) return;
-      if (global.compositor?.get_laters) global.compositor.get_laters().remove(id);
-    };
-    const frameLaterType = Meta.LaterType.BEFORE_REDRAW;
-
-    let buildClones = () => {
-      if (!this.bgActor) return;
-
-      if (this._uiSampler) {
-        for (let child of Main.layoutManager.uiGroup.get_children()) {
-          if (child === this.bgActor) continue;
-          let isLiquidBg = child.get_name?.() === 'liquid-glass-bg-actor' ||
-            (typeof child.get_children === 'function' &&
-              child.get_children().some((c: Clutter.Actor) => c.get_name?.() === 'liquid-box'));
-          if (isLiquidBg) this._uiSampler!.addExclusion(child);
-        }
-      }
-
-      this._windowCloneManager?.rebuildClones();
-      this._uiSampler?.rebindSelf();
-      this._uiSampler?.refresh();
-    };
-
-    let frameTick = () => {
-      this._frameSyncId = 0;
-      if (this._torndown) return GLib.SOURCE_REMOVE;
-      if (!this.bgActor || !this.targetActor.mapped) return GLib.SOURCE_REMOVE;
-
-      if (isFrameSyncFrozen()) {
-        this._frameSyncId = laterAdd(frameLaterType, frameTick);
-        return GLib.SOURCE_REMOVE;
-      }
-
-      ensureGlassAllocated(this.bgActor);
-      try {
-        this._syncGeometry();
-      } catch (e) {
-        reportFrameLoopError('QuickSettingsManager', e);
-      }
-      this._frameSyncId = laterAdd(frameLaterType, frameTick);
-      return GLib.SOURCE_REMOVE;
-    };
-
-    let startFrameSync = () => {
-      if (this._frameSyncId === 0) {
-        buildClones();
-        this._frameSyncId = laterAdd(frameLaterType, frameTick);
-      }
-    };
-
-    let stopFrameSync = () => {
-      if (this._frameSyncId !== 0) {
-        laterRemove(this._frameSyncId);
-        this._frameSyncId = 0;
-      }
-    };
+    const startFrameSync = () => this._startFrameSync(() => this._syncGeometry(), 'QuickSettingsManager', true);
+    const stopFrameSync = () => this._stopFrameSync();
 
     if (this._hasAutoRefreshed === undefined) this._hasAutoRefreshed = false;
     this._signals = [];
@@ -656,61 +598,8 @@ export class QuickSettingsManager {
 
     this.bgActor.hide();
 
-    const laterAdd = (laterType: Meta.LaterType, callback: GLib.SourceFunc) => {
-      return global.compositor?.get_laters?.().add(laterType, callback);
-    };
-    const laterRemove = (id: number) => {
-      if (!id) return;
-      if (global.compositor?.get_laters) global.compositor.get_laters().remove(id);
-    };
-    const frameLaterType = Meta.LaterType.BEFORE_REDRAW;
-
-    let buildClones = () => {
-      if (!this.bgActor) return;
-
-      if (this._uiSampler) {
-        for (let child of Main.layoutManager.uiGroup.get_children()) {
-          if (child === this.bgActor) continue;
-          let isLiquidBg = child.get_name?.() === 'liquid-glass-bg-actor' ||
-            (typeof child.get_children === 'function' &&
-              child.get_children().some((c: Clutter.Actor) => c.get_name?.() === 'liquid-box'));
-          if (isLiquidBg) this._uiSampler!.addExclusion(child);
-        }
-      }
-
-      this._windowCloneManager?.rebuildClones();
-      this._uiSampler?.rebindSelf();
-      this._uiSampler?.refresh();
-    };
-
-    let frameTick = () => {
-      this._frameSyncId = 0;
-      if (this._torndown) return GLib.SOURCE_REMOVE;
-      if (!this.bgActor || !this.targetActor.mapped) return GLib.SOURCE_REMOVE;
-
-      ensureGlassAllocated(this.bgActor);
-      try {
-        this._syncToggleRegions();
-      } catch (e) {
-        reportFrameLoopError('QuickSettingsManager(toggles)', e);
-      }
-      this._frameSyncId = laterAdd(frameLaterType, frameTick);
-      return GLib.SOURCE_REMOVE;
-    };
-
-    let startFrameSync = () => {
-      if (this._frameSyncId === 0) {
-        buildClones();
-        this._frameSyncId = laterAdd(frameLaterType, frameTick);
-      }
-    };
-
-    let stopFrameSync = () => {
-      if (this._frameSyncId !== 0) {
-        laterRemove(this._frameSyncId);
-        this._frameSyncId = 0;
-      }
-    };
+    const startFrameSync = () => this._startFrameSync(() => this._syncToggleRegions(), 'QuickSettingsManager(toggles)', false);
+    const stopFrameSync = () => this._stopFrameSync();
 
     this._signals = [];
 
@@ -744,6 +633,57 @@ export class QuickSettingsManager {
     if (this.targetActor.mapped) {
       startFrameSync();
     }
+  }
+
+  private _laterAdd(callback: GLib.SourceFunc): number {
+    return global.compositor?.get_laters?.().add(Meta.LaterType.BEFORE_REDRAW, callback);
+  }
+
+  private _buildClones(): void {
+    if (!this.bgActor) return;
+
+    if (this._uiSampler) {
+      for (let child of Main.layoutManager.uiGroup.get_children()) {
+        if (child === this.bgActor) continue;
+        let isLiquidBg = child.get_name?.() === 'liquid-glass-bg-actor' ||
+          (typeof child.get_children === 'function' &&
+            child.get_children().some((c: Clutter.Actor) => c.get_name?.() === 'liquid-box'));
+        if (isLiquidBg) this._uiSampler!.addExclusion(child);
+      }
+    }
+
+    this._windowCloneManager?.rebuildClones();
+    this._uiSampler?.rebindSelf();
+    this._uiSampler?.refresh();
+  }
+
+  private _startFrameSync(sync: () => void, errorTag: string, honourFreeze: boolean): void {
+    if (this._frameSyncId !== 0) return;
+    this._buildClones();
+    const tick = (): boolean => {
+      this._frameSyncId = 0;
+      if (this._torndown) return GLib.SOURCE_REMOVE;
+      if (!this.bgActor || !this.targetActor.mapped) return GLib.SOURCE_REMOVE;
+      if (honourFreeze && isFrameSyncFrozen()) {
+        this._frameSyncId = this._laterAdd(tick);
+        return GLib.SOURCE_REMOVE;
+      }
+      ensureGlassAllocated(this.bgActor);
+      try {
+        sync();
+      } catch (e) {
+        reportFrameLoopError(errorTag, e);
+      }
+      this._frameSyncId = this._laterAdd(tick);
+      return GLib.SOURCE_REMOVE;
+    };
+    this._frameSyncId = this._laterAdd(tick);
+  }
+
+  private _stopFrameSync(): void {
+    if (this._frameSyncId === 0) return;
+    if (global.compositor?.get_laters) global.compositor.get_laters().remove(this._frameSyncId);
+    this._frameSyncId = 0;
   }
 
   private _panelActorWarned: boolean = false;
@@ -1006,7 +946,7 @@ export class QuickSettingsManager {
     }
 
     let [inW, inH] = this.animActor.get_size();
-    let [outW, outH] = this.targetActor.get_size();
+    let [outW] = this.targetActor.get_size();
 
     inW = Number.isNaN(inW) || inW <= 0 ? (this._stableBaseW || 1) : inW;
     inH = Number.isNaN(inH) || inH <= 0 ? (this._stableBaseH || 1) : inH;
