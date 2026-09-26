@@ -1462,22 +1462,24 @@ export class QuickSettingsManager {
 
   _clearButtonStyles() {
     this._stopButtonAlphaSampling();
-    if (this._buttonSignalIds) {
-      for (const [button, signalIds] of this._buttonSignalIds.entries()) {
-        if (button) {
-          for (const id of signalIds) {
-            try { button.disconnect(id); } catch { }
-          }
-        }
-      }
-      this._buttonSignalIds.clear();
-    }
+    this._disconnectButtonSignals();
     for (const [button, originalStyle] of this._styledButtons.entries()) {
       if (button && button instanceof St.Widget && typeof button.set_style === 'function') {
         button.set_style(originalStyle || null);
       }
     }
     this._styledButtons.clear();
+  }
+
+  private _disconnectButtonSignals(): void {
+    if (!this._buttonSignalIds) return;
+    for (const [button, signalIds] of this._buttonSignalIds.entries()) {
+      if (!button) continue;
+      for (const id of signalIds) {
+        try { button.disconnect(id); } catch { }
+      }
+    }
+    this._buttonSignalIds.clear();
   }
 
   _startAnimation(targetValue: number) {
