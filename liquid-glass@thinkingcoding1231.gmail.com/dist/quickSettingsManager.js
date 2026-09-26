@@ -22,6 +22,43 @@ import { syncGlassCaptureClip } from './capture/clip.js';
 import { resolveCrossFade, adaptiveColorTweener } from './animation/colors.js';
 const SHADER_PADDING = 20;
 const SAMPLE_PER_ELEMENT = false;
+function _collectSubmenus(actor, into) {
+    if (!actor)
+        return;
+    if (actor instanceof St.Widget) {
+        let css = actor.get_style_class_name ? actor.get_style_class_name() : '';
+        if (css && css.split(' ').includes('quick-toggle-menu'))
+            into.push(actor);
+    }
+    let children = typeof actor.get_children === 'function' ? actor.get_children() : [];
+    for (let child of children)
+        _collectSubmenus(child, into);
+}
+function _recordSubmenuNeighbour(n, gap) {
+    let [, nodeY] = n.get_transformed_position();
+    let [nodeW, nodeH] = getAllocatedSize(n);
+    if (Number.isNaN(nodeY) || Number.isNaN(nodeW) || Number.isNaN(nodeH) ||
+        nodeH <= 5 || nodeW <= 5)
+        return false;
+    if (nodeY + (nodeH / 2) < gap.subCenterY) {
+        if (nodeY + nodeH <= gap.subCenterY && nodeY + nodeH > gap.aboveMaxY)
+            gap.aboveMaxY = nodeY + nodeH;
+    }
+    else if (nodeY >= gap.subCenterY && nodeY < gap.belowMinY) {
+        gap.belowMinY = nodeY;
+    }
+    return true;
+}
+function _findSubmenuGap(n, submenu, gap) {
+    if (!n || !n.visible || !n.mapped || n === submenu)
+        return;
+    const containsSubmenu = typeof n.contains === 'function' && n.contains(submenu);
+    if (!containsSubmenu && !_recordSubmenuNeighbour(n, gap))
+        return;
+    let children = typeof n.get_children === 'function' ? n.get_children() : [];
+    for (let child of children)
+        _findSubmenuGap(child, submenu, gap);
+}
 export class QuickSettingsManager {
     static REGION_GRACE_FRAMES = 2;
     _toggleStyles;
@@ -1367,19 +1404,7 @@ export class QuickSettingsManager {
             return;
         if (!this._cachedSubmenus) {
             this._cachedSubmenus = [];
-            let deepScan = (actor) => {
-                if (!actor)
-                    return;
-                if (actor instanceof St.Widget) {
-                    let css = actor.get_style_class_name ? actor.get_style_class_name() : '';
-                    if (css && css.split(' ').includes('quick-toggle-menu'))
-                        this._cachedSubmenus.push(actor);
-                }
-                let children = typeof actor.get_children === 'function' ? actor.get_children() : [];
-                for (let child of children)
-                    deepScan(child);
-            };
-            deepScan(this.menu.actor);
+            _collectSubmenus(this.menu.actor, this._cachedSubmenus);
         }
         let foundMenus = this._cachedSubmenus;
         if (foundMenus.length === 0)
@@ -1390,80 +1415,40 @@ export class QuickSettingsManager {
             Number.isNaN(parentW) || Number.isNaN(parentH) ||
             parentW <= 0 || parentH <= 0)
             return;
-        for (let submenu of foundMenus) {
-            if (!submenu.mapped || !submenu.visible)
-                continue;
-            let [subAbsX, subAbsY] = submenu.get_transformed_position();
-            let [subW, subH] = getAllocatedSize(submenu);
-            if (Number.isNaN(subAbsX) || Number.isNaN(subAbsY) ||
-                Number.isNaN(subW) || Number.isNaN(subH) ||
-                subW <= 0 || subH <= 0)
-                continue;
-            let currentTranslationX = submenu.translation_x || 0;
-            let baseRelativeX = subAbsX - parentAbsX - currentTranslationX;
-            let targetRelativeX = (parentW - subW) / 2;
-            let newTranslationX = targetRelativeX - baseRelativeX;
-            if (Math.abs(currentTranslationX - newTranslationX) > 0.5) {
-                submenu.translation_x = newTranslationX;
-            }
-            let currentTranslationY = submenu.translation_y || 0;
-            let baseAbsY = subAbsY - currentTranslationY;
-            let subCenterY = baseAbsY + (subH / 2);
-            let aboveMaxY = parentAbsY;
-            let belowMinY = parentAbsY + parentH;
-            let findBoundaries = (n) => {
-                if (!n || !n.visible || !n.mapped || n === submenu)
-                    return;
-                if (typeof n.contains === 'function' && n.contains(submenu)) {
-                    let children = typeof n.get_children === 'function' ? n.get_children() : [];
-                    for (let child of children)
-                        findBoundaries(child);
-                    return;
-                }
-                let [, nodeY] = n.get_transformed_position();
-                let [nodeW, nodeH] = getAllocatedSize(n);
-                if (Number.isNaN(nodeY) || Number.isNaN(nodeW) || Number.isNaN(nodeH) ||
-                    nodeH <= 5 || nodeW <= 5)
-                    return;
-                if (nodeY + (nodeH / 2) < subCenterY) {
-                    if (nodeY + nodeH <= subCenterY && nodeY + nodeH > aboveMaxY)
-                        aboveMaxY = nodeY + nodeH;
-                }
-                else {
-                    if (nodeY >= subCenterY && nodeY < belowMinY)
-                        belowMinY = nodeY;
-                }
-                let children = typeof n.get_children === 'function' ? n.get_children() : [];
-                for (let child of children)
-                    findBoundaries(child);
-            };
-            let parentChildren = typeof this.animActor.get_children === 'function' ? this.animActor.get_children() : [];
-            for (let child of parentChildren)
-                findBoundaries(child);
-            let targetTranslationY = (aboveMaxY + (belowMinY - aboveMaxY) / 2) - (subH / 2) - baseAbsY;
-            if (Math.abs(currentTranslationY - targetTranslationY) > 0.5) {
-                submenu.translation_y = targetTranslationY;
-            }
+        for (let submenu of foundMenus)
+            this._centerSubmenu(submenu, parentAbsX, parentAbsY, parentW, parentH);
+    }
+    _centerSubmenu(submenu, parentAbsX, parentAbsY, parentW, parentH) {
+        if (!submenu.mapped || !submenu.visible)
+            return;
+        let [subAbsX, subAbsY] = submenu.get_transformed_position();
+        let [subW, subH] = getAllocatedSize(submenu);
+        if (Number.isNaN(subAbsX) || Number.isNaN(subAbsY) ||
+            Number.isNaN(subW) || Number.isNaN(subH) ||
+            subW <= 0 || subH <= 0)
+            return;
+        let currentTranslationX = submenu.translation_x || 0;
+        let baseRelativeX = subAbsX - parentAbsX - currentTranslationX;
+        let targetRelativeX = (parentW - subW) / 2;
+        let newTranslationX = targetRelativeX - baseRelativeX;
+        if (Math.abs(currentTranslationX - newTranslationX) > 0.5) {
+            submenu.translation_x = newTranslationX;
+        }
+        let currentTranslationY = submenu.translation_y || 0;
+        let baseAbsY = subAbsY - currentTranslationY;
+        const gap = { subCenterY: baseAbsY + (subH / 2), aboveMaxY: parentAbsY, belowMinY: parentAbsY + parentH };
+        let parentChildren = typeof this.animActor.get_children === 'function' ? this.animActor.get_children() : [];
+        for (let child of parentChildren)
+            _findSubmenuGap(child, submenu, gap);
+        let targetTranslationY = (gap.aboveMaxY + (gap.belowMinY - gap.aboveMaxY) / 2) - (subH / 2) - baseAbsY;
+        if (Math.abs(currentTranslationY - targetTranslationY) > 0.5) {
+            submenu.translation_y = targetTranslationY;
         }
     }
     _clearSubmenuFix() {
         let foundMenus = this._cachedSubmenus || [];
-        if (foundMenus.length === 0) {
-            let deepScan = (actor) => {
-                if (!actor)
-                    return;
-                if (actor instanceof St.Widget) {
-                    let css = actor.get_style_class_name ? actor.get_style_class_name() : '';
-                    if (css && css.split(' ').includes('quick-toggle-menu'))
-                        foundMenus.push(actor);
-                }
-                let children = typeof actor.get_children === 'function' ? actor.get_children() : [];
-                for (let child of children)
-                    deepScan(child);
-            };
-            if (this.menu?.actor)
-                deepScan(this.menu.actor);
-        }
+        if (foundMenus.length === 0 && this.menu?.actor)
+            _collectSubmenus(this.menu.actor, foundMenus);
         for (let submenu of foundMenus) {
             try {
                 submenu.translation_x = 0;
