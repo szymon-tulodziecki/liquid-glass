@@ -9,8 +9,8 @@ export function syncDamageHooks(hooks, sources, onDamage) {
         }
         catch { }
     }
-    for (const [source, id] of [...hooks]) {
-        if (sources.has(source))
+    for (const [source, id] of hooks) {
+        if (sources.has(source) && isActorValid(source) && innerGlassEffectOf(source))
             continue;
         try {
             if (isActorValid(source))

@@ -873,7 +873,7 @@ export class QuickSettingsManager {
 
     this.effect?.setGlassRegions(layout.regions);
 
-    this._applyToggleBounds(layout.minX, layout.minY, layout.maxX - layout.minX, layout.maxY - layout.minY,
+    this._applyToggleBounds(this.bgActor, layout.minX, layout.minY, layout.maxX - layout.minX, layout.maxY - layout.minY,
       bgPosX, bgPosY, screenW, screenH);
     this._syncCaptureLayers(monitorX, monitorY, screenW, screenH);
   }
@@ -932,13 +932,11 @@ export class QuickSettingsManager {
     return this._takeLastRegions();
   }
 
-  private _applyToggleBounds(localBgX: number, localBgY: number, bgW: number, bgH: number,
+  private _applyToggleBounds(bgActor: Clutter.Actor, localBgX: number, localBgY: number, bgW: number, bgH: number,
     bgPosX: number, bgPosY: number, screenW: number, screenH: number) {
     if (this._lastBgW === bgW && this._lastBgH === bgH &&
       this._lastBgX === localBgX && this._lastBgY === localBgY &&
       this._lastScreenW === screenW && this._lastScreenH === screenH) return;
-    const bgActor = this.bgActor;
-    if (!bgActor) return;
     bgActor.remove_transition('size');
     bgActor.remove_transition('position');
     bgActor.set_position(bgPosX, bgPosY);
@@ -1007,7 +1005,7 @@ export class QuickSettingsManager {
       let screenW = Math.max(1, monitor?.width ?? 1);
       let screenH = Math.max(1, monitor?.height ?? 1);
 
-      this._applyPanelBounds(bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH);
+      this._applyPanelBounds(this.bgActor, bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH);
       this._syncCaptureLayers(monitorX, monitorY, screenW, screenH);
     }
 
@@ -1080,13 +1078,11 @@ export class QuickSettingsManager {
     return [(monitor.width / 2) - (w / 2), (Main.panel.height || 27) + (this._menuYoffset ?? 0)];
   }
 
-  private _applyPanelBounds(bgX: number, bgY: number, bgW: number, bgH: number,
+  private _applyPanelBounds(bgActor: Clutter.Actor, bgX: number, bgY: number, bgW: number, bgH: number,
     monitorX: number, monitorY: number, screenW: number, screenH: number) {
     if (this._lastBgW === bgW && this._lastBgH === bgH &&
       this._lastBgX === bgX && this._lastBgY === bgY &&
       this._lastScreenW === screenW && this._lastScreenH === screenH) return;
-    const bgActor = this.bgActor;
-    if (!bgActor) return;
 
     let localBgX = bgX - monitorX;
     let localBgY = bgY - monitorY;

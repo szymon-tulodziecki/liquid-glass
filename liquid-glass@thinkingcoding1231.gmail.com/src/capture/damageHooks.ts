@@ -10,8 +10,8 @@ export function syncDamageHooks(
       hooks.set(source, source.connect('damaged', onDamage));
     } catch { }
   }
-  for (const [source, id] of [...hooks]) {
-    if (sources.has(source)) continue;
+  for (const [source, id] of hooks) {
+    if (sources.has(source) && isActorValid(source) && innerGlassEffectOf(source)) continue;
     try { if (isActorValid(source)) source.disconnect(id); } catch { }
     hooks.delete(source);
   }

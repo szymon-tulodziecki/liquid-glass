@@ -899,6 +899,8 @@ export class ApplicationManager {
     }
     _repairNestedGlass(state) {
         const mode = getNestedGlassFix();
+        if (mode !== 'damage')
+            this._releaseDamageHooks(state);
         if (mode === 'off')
             return;
         const bg = state.bgActor;
@@ -934,7 +936,7 @@ export class ApplicationManager {
                 stale = true;
             }
         }
-        for (const src of [...seen.keys()])
+        for (const src of seen.keys())
             if (!state.clones.has(src))
                 seen.delete(src);
         return stale;

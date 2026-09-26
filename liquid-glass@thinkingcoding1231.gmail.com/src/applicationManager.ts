@@ -1095,6 +1095,7 @@ export class ApplicationManager {
 
   _repairNestedGlass(state: WindowState): void {
     const mode = getNestedGlassFix();
+    if (mode !== 'damage') this._releaseDamageHooks(state);
     if (mode === 'off') return;
     const bg = state.bgActor;
     if (!bg || !isActorValid(bg) || !bg.mapped || !bg.visible) return;
@@ -1124,7 +1125,7 @@ export class ApplicationManager {
       const serial = inner._recaptureSerial;
       if (seen.get(src) !== serial) { seen.set(src, serial); stale = true; }
     }
-    for (const src of [...seen.keys()]) if (!state.clones.has(src)) seen.delete(src);
+    for (const src of seen.keys()) if (!state.clones.has(src)) seen.delete(src);
     return stale;
   }
 

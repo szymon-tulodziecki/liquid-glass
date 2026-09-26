@@ -752,7 +752,7 @@ export class QuickSettingsManager {
         let panelOpacity = this.targetActor.get_first_child()?.opacity ?? 255;
         this.bgActor.opacity = Math.round(panelOpacity * TOGGLE_GLASS_OVERLAY_OPACITY);
         this.effect?.setGlassRegions(layout.regions);
-        this._applyToggleBounds(layout.minX, layout.minY, layout.maxX - layout.minX, layout.maxY - layout.minY, bgPosX, bgPosY, screenW, screenH);
+        this._applyToggleBounds(this.bgActor, layout.minX, layout.minY, layout.maxX - layout.minX, layout.maxY - layout.minY, bgPosX, bgPosY, screenW, screenH);
         this._syncCaptureLayers(monitorX, monitorY, screenW, screenH);
     }
     _placeToggleHost(bgActor, monitorX, monitorY) {
@@ -804,13 +804,10 @@ export class QuickSettingsManager {
         }
         return this._takeLastRegions();
     }
-    _applyToggleBounds(localBgX, localBgY, bgW, bgH, bgPosX, bgPosY, screenW, screenH) {
+    _applyToggleBounds(bgActor, localBgX, localBgY, bgW, bgH, bgPosX, bgPosY, screenW, screenH) {
         if (this._lastBgW === bgW && this._lastBgH === bgH &&
             this._lastBgX === localBgX && this._lastBgY === localBgY &&
             this._lastScreenW === screenW && this._lastScreenH === screenH)
-            return;
-        const bgActor = this.bgActor;
-        if (!bgActor)
             return;
         bgActor.remove_transition('size');
         bgActor.remove_transition('position');
@@ -869,7 +866,7 @@ export class QuickSettingsManager {
             let monitorY = monitor?.y ?? 0;
             let screenW = Math.max(1, monitor?.width ?? 1);
             let screenH = Math.max(1, monitor?.height ?? 1);
-            this._applyPanelBounds(bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH);
+            this._applyPanelBounds(this.bgActor, bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH);
             this._syncCaptureLayers(monitorX, monitorY, screenW, screenH);
         }
         this._applyGlassScale(scaleX, scaleY);
@@ -933,13 +930,10 @@ export class QuickSettingsManager {
             return [0, 0];
         return [(monitor.width / 2) - (w / 2), (Main.panel.height || 27) + (this._menuYoffset ?? 0)];
     }
-    _applyPanelBounds(bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH) {
+    _applyPanelBounds(bgActor, bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH) {
         if (this._lastBgW === bgW && this._lastBgH === bgH &&
             this._lastBgX === bgX && this._lastBgY === bgY &&
             this._lastScreenW === screenW && this._lastScreenH === screenH)
-            return;
-        const bgActor = this.bgActor;
-        if (!bgActor)
             return;
         let localBgX = bgX - monitorX;
         let localBgY = bgY - monitorY;

@@ -852,7 +852,7 @@ export class UIManager {
     let screenH = Math.max(1, monitor?.height ?? 1);
 
     if (!Number.isNaN(bgX) && !Number.isNaN(bgY) && w >= 1.0 && h >= 1.0)
-      this._applyGlassBounds(bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH);
+      this._applyGlassBounds(this.bgActor!, bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH);
 
     this._applyGlassScale(scaleX, scaleY);
     this._syncCaptureLayers(monitorX, monitorY, screenW, screenH);
@@ -911,14 +911,12 @@ export class UIManager {
     return [(monitor.width / 2) - (w / 2) + this._menuXoffset, (Main.panel.height || 27) + this._menuYoffset];
   }
 
-  private _applyGlassBounds(bgX: number, bgY: number, bgW: number, bgH: number,
+  private _applyGlassBounds(bgActor: Clutter.Actor, bgX: number, bgY: number, bgW: number, bgH: number,
     monitorX: number, monitorY: number, screenW: number, screenH: number) {
     if (this._lastBgW === bgW && this._lastBgH === bgH &&
       this._lastBgX === bgX && this._lastBgY === bgY &&
       this._lastScreenW === screenW && this._lastScreenH === screenH) return;
 
-    const bgActor = this.bgActor;
-    if (!bgActor) return;
     let localBgX = bgX - monitorX;
     let localBgY = bgY - monitorY;
 
@@ -1312,9 +1310,9 @@ export class UIManager {
 
     this._stopAdaptiveColorSampling();
     this._clearAdaptiveStyles();
-    this._disconnectEffectSources();
-    this._restoreMenuActors();
-    this._releaseGlass();
+    this._teardownStep('disconnectEffectSources', () => this._disconnectEffectSources());
+    this._teardownStep('restoreMenuActors', () => this._restoreMenuActors());
+    this._teardownStep('releaseGlass', () => this._releaseGlass());
   }
 
   private _disconnectEffectSources() {

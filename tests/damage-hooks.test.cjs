@@ -141,3 +141,14 @@ test('releasing hooks disconnects live sources and skips disposed ones', () => {
   assert.equal(a.handlers.size, 0);
   assert.equal(b.handlers.size, 1);
 });
+
+test('a source that keeps its clone but loses its inner glass loses its damage hook', () => {
+  const a = source();
+  const hooks = new Map(), sources = new Map([[a, {}]]);
+  syncDamageHooks(hooks, sources, () => {});
+  assert.equal(a.callbacks.size, 1);
+  a.glass = false;
+  syncDamageHooks(hooks, sources, () => {});
+  assert.equal(hooks.size, 0);
+  assert.equal(a.callbacks.size, 0);
+});
