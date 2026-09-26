@@ -53,3 +53,48 @@ test('a failed disconnect does not prevent other damage subscriptions being remo
   assert.equal(hooks.size, 0);
   assert.equal(b.callbacks.size, 0);
 });
+
+test('application damage callbacks follow the current background and stop when it is hidden', () => {
+  const { ApplicationManager } = loadModule(path.join(dist, 'applicationManager.js'), {
+    ...bindings, Meta: { WindowType: {} },
+  });
+  const manager = Object.create(ApplicationManager.prototype);
+  const a = source();
+  const background = () => ({ mapped: true, visible: true, redraws: 0, queue_redraw() { this.redraws++; } });
+  const first = background(), second = background();
+  const state = { clones: new Map([[a, {}]]), bgActor: first };
+  manager._syncDamageHooks(state);
+  manager._syncDamageHooks(state);
+  const emit = () => [...a.callbacks.values()].forEach(cb => cb());
+  emit();
+  assert.equal(first.redraws, 1);
+  state.bgActor = second;
+  emit();
+  assert.equal(first.redraws, 1);
+  assert.equal(second.redraws, 1);
+  second.visible = false;
+  emit();
+  assert.equal(second.redraws, 1);
+  manager._releaseDamageHooks(state);
+  assert.equal(a.callbacks.size, 0);
+  assert.equal(state.damageHooks, undefined);
+});
+
+test('window clone damage callbacks retain their container and release when the mode changes', () => {
+  let mode = 'damage';
+  const { WindowCloneManager } = loadModule(path.join(dist, 'capture/windowClones.js'), {
+    ...bindings, getNestedGlassFix: () => mode,
+  });
+  const manager = Object.create(WindowCloneManager.prototype);
+  const a = source();
+  const container = { mapped: true, visible: true, redraws: 0, queue_redraw() { this.redraws++; } };
+  Object.assign(manager, { container, _windowClones: new Map([[a, {}]]), _damageHooks: new Map() });
+  manager._syncDamageHooks();
+  manager.container = { ...container };
+  [...a.callbacks.values()][0]();
+  assert.equal(container.redraws, 1);
+  assert.equal(manager.container.redraws, 0);
+  mode = 'off';
+  manager._syncDamageHooks();
+  assert.equal(a.callbacks.size, 0);
+});
