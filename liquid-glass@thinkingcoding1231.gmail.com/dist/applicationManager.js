@@ -856,7 +856,6 @@ export class ApplicationManager {
             state.effect.setGlassGeometry(0, 0, bgW, bgH);
         }
         this._syncAnimatedCornerRadius(state, sx);
-        const anchorOffBy = anchorOffByEarly;
         this._syncCaptureOffset(state, actor, [pivotFxEarly, pivotFyEarly], [actorWEarly, actorHEarly], [sx, sy], [localX, localY]);
         this._syncClones(state);
         setActorVisible(state.cornerOverlay, CORNER_REVEAL_ENABLED);
@@ -867,7 +866,7 @@ export class ApplicationManager {
             state.cornerOverlayClone.set_position(0, 0);
             state.cornerOverlayClone.set_size(baseW, baseH);
         }
-        if (anchorOffBy > MAX_ANCHOR_DISPLACEMENT) {
+        if (anchorOffByEarly > MAX_ANCHOR_DISPLACEMENT) {
             this._setGlassStrandHidden(state, true);
             state.geomSig = undefined;
         }

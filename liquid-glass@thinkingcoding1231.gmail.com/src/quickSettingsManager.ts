@@ -1709,7 +1709,7 @@ export class QuickSettingsManager {
   }
 
   private _restoreMenuActors(): void {
-this.targetActor.remove_style_class_name('liquid-glass-transparent');
+    this.targetActor.remove_style_class_name('liquid-glass-transparent');
     if (this.animActor) {
       this.animActor.remove_style_class_name('liquid-glass-transparent');
       this.animActor.remove_style_class_name('liquid-glass-qs-root');

@@ -184,8 +184,6 @@ export class WindowCloneManager {
         `cullRect=[${this._cullRect!.map(Math.round)}] label=${this.label}`
       : `label=${this.label}`);
 
-    const tX = wX;
-    const tY = wY;
     const pX = w.pivot_point ? w.pivot_point.x : 0;
     const pY = w.pivot_point ? w.pivot_point.y : 0;
 
@@ -195,7 +193,7 @@ export class WindowCloneManager {
     clone.remove_transition('translation-y');
 
     if (clone.x !== 0 || clone.y !== 0) clone.set_position(0, 0);
-    setTranslationIfChanged(clone, tX, tY);
+    setTranslationIfChanged(clone, wX, wY);
 
     setSizeIfChanged(clone, width, height);
 

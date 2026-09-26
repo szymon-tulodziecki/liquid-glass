@@ -1037,7 +1037,6 @@ export class ApplicationManager {
 
     this._syncAnimatedCornerRadius(state, sx);
 
-    const anchorOffBy = anchorOffByEarly;
 
     this._syncCaptureOffset(state, actor, [pivotFxEarly, pivotFyEarly],
       [actorWEarly, actorHEarly], [sx, sy], [localX, localY]);
@@ -1056,7 +1055,7 @@ export class ApplicationManager {
       state.cornerOverlayClone.set_size(baseW, baseH);
     }
 
-    if (anchorOffBy > MAX_ANCHOR_DISPLACEMENT) {
+    if (anchorOffByEarly > MAX_ANCHOR_DISPLACEMENT) {
       this._setGlassStrandHidden(state, true);
       state.geomSig = undefined;
     } else {
