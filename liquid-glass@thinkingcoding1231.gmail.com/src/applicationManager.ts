@@ -1097,6 +1097,10 @@ export class ApplicationManager {
       return;
     }
 
+    if (this._nestedClonesChanged(state)) bg.queue_redraw();
+  }
+
+  private _nestedClonesChanged(state: WindowState): boolean {
     let seen = state.nestedSerials;
     if (!seen) { seen = new Map(); state.nestedSerials = seen; }
 
@@ -1111,8 +1115,7 @@ export class ApplicationManager {
     if (seen.size > state.clones.size) {
       for (const src of [...seen.keys()]) if (!state.clones.has(src)) seen.delete(src);
     }
-
-    if (stale) bg.queue_redraw();
+    return stale;
   }
 
   _syncDamageHooks(state: WindowState): void {

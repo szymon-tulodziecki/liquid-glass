@@ -906,6 +906,10 @@ export class ApplicationManager {
             bg.queue_redraw();
             return;
         }
+        if (this._nestedClonesChanged(state))
+            bg.queue_redraw();
+    }
+    _nestedClonesChanged(state) {
         let seen = state.nestedSerials;
         if (!seen) {
             seen = new Map();
@@ -929,8 +933,7 @@ export class ApplicationManager {
                 if (!state.clones.has(src))
                     seen.delete(src);
         }
-        if (stale)
-            bg.queue_redraw();
+        return stale;
     }
     _syncDamageHooks(state) {
         let hooks = state.damageHooks;
