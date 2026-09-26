@@ -19,11 +19,11 @@ function _withOverride(origStyle: string): string {
 
 function _releaseEntry(pod: Clutter.Actor, entry: ToggleEntry): void {
   if (entry.destroyId) {
-    try { pod.disconnect(entry.destroyId); } catch (_) { }
+    try { pod.disconnect(entry.destroyId); } catch { }
   }
   for (const { actor, origStyle } of entry.styledSubs) {
     if (!(actor instanceof St.Widget) || typeof actor.set_style !== 'function') continue;
-    try { actor.set_style(origStyle || null); } catch (e) { }
+    try { actor.set_style(origStyle || null); } catch { }
   }
 }
 
@@ -164,7 +164,7 @@ export class ToggleStyles {
           };
         }
       }
-    } catch (e) {
+    } catch {
     }
 
     if (!bg) return null;

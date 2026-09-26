@@ -126,7 +126,7 @@ export class PanelMenuManager {
                 try {
                     manager?.cleanup();
                 }
-                catch (_) { }
+                catch { }
                 this._logger.log(`[Liquid Glass] Could not attach panel menu glass to "${name}": ${e}`);
             }
         }
@@ -139,7 +139,7 @@ export class PanelMenuManager {
             try {
                 this._logger?.log(`[Liquid Glass] PanelMenuManager.${name} failed during cleanup: ${e}`);
             }
-            catch (_) {
+            catch {
                 console.error(`[Liquid Glass] PanelMenuManager.${name} failed during cleanup: ${e}`);
             }
         }
@@ -156,7 +156,7 @@ export class PanelMenuManager {
                 try {
                     target.disconnect(id);
                 }
-                catch (e) { }
+                catch { }
             }
             this._signals = [];
         });
@@ -166,7 +166,7 @@ export class PanelMenuManager {
                     try {
                         button.disconnect(id);
                     }
-                    catch (e) { }
+                    catch { }
                 }
             this._buttons.clear();
         });

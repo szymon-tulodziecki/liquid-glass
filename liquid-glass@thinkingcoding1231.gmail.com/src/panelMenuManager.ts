@@ -118,7 +118,7 @@ export class PanelMenuManager {
         manager.setup();
         this._menus.set(menu, { name, manager });
       } catch (e) {
-        try { manager?.cleanup(); } catch (_) { }
+        try { manager?.cleanup(); } catch { }
         this._logger.log(`[Liquid Glass] Could not attach panel menu glass to "${name}": ${e}`);
       }
     }
@@ -130,7 +130,7 @@ export class PanelMenuManager {
     } catch (e) {
       try {
         this._logger?.log(`[Liquid Glass] PanelMenuManager.${name} failed during cleanup: ${e}`);
-      } catch (_) {
+      } catch {
         console.error(`[Liquid Glass] PanelMenuManager.${name} failed during cleanup: ${e}`);
       }
     }
@@ -146,7 +146,7 @@ export class PanelMenuManager {
 
     this._teardownStep('signals', () => {
       for (const { target, id } of this._signals) {
-        try { target.disconnect(id); } catch (e) { }
+        try { target.disconnect(id); } catch { }
       }
       this._signals = [];
     });
@@ -154,7 +154,7 @@ export class PanelMenuManager {
     this._teardownStep('buttonSignals', () => {
       for (const [button, ids] of this._buttons)
         for (const id of ids) {
-          try { button.disconnect(id); } catch (e) { }
+          try { button.disconnect(id); } catch { }
         }
       this._buttons.clear();
     });

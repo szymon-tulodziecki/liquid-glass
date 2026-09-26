@@ -31,13 +31,14 @@ function _ringLine(fx) {
         return null;
     const mw = wa.get_meta_window ? wa.get_meta_window() : null;
     const wg = wa.get_parent();
+    const wgAllocated = wg?.has_allocation() ? 1 : 0;
     return `${fx._diagOwnerLabel || '?'}|sc=${wa.scale_x.toFixed(3)},${wa.scale_y.toFixed(3)}` +
         `|op=${wa.opacity}|pos=${Math.round(wa.x)},${Math.round(wa.y)}` +
         `|map=${wa.mapped ? 1 : 0}|alloc=${wa.has_allocation() ? 1 : 0}` +
         `|gAlloc=${a.has_allocation() ? 1 : 0}|gPos=${Math.round(a.x)},${Math.round(a.y)}` +
         `|gSize=${Math.round(a.width)}x${Math.round(a.height)}` +
         `|min=${mw?.minimized ? 1 : 0}` +
-        `|wgAlloc=${wg ? (wg.has_allocation() ? 1 : 0) : '-'}` +
+        `|wgAlloc=${wg ? wgAllocated : '-'}` +
         `|views=${(wa.peek_stage_views() || []).length}` +
         _ringTransition(wa);
 }
@@ -50,7 +51,7 @@ function _ringSampleOnce() {
         try {
             line = _ringLine(fx);
         }
-        catch (_) {
+        catch {
             continue;
         }
         if (line === null || _ringLast.get(fx) === line)
@@ -70,7 +71,7 @@ function _dumpWindowState(wa, live) {
             live.wRect = `${r.x},${r.y},${r.width}x${r.height}`;
         }
     }
-    catch (_) { }
+    catch { }
 }
 function _dumpTransitions(wa, live) {
     for (const prop of ['opacity', 'scale-x']) {
@@ -83,7 +84,7 @@ function _dumpTransitions(wa, live) {
                         `,clock=${tr.get_frame_clock() ? 'set' : 'NULL'}`;
             }
         }
-        catch (_) { }
+        catch { }
     }
 }
 function _dumpParentState(a, wa, live) {
@@ -100,13 +101,13 @@ function _dumpParentState(a, wa, live) {
             live.wgViews = (wg.peek_stage_views() || []).length;
         live.glassViews = (a.peek_stage_views() || []).length;
     }
-    catch (_) { }
+    catch { }
     try {
         const destroying = Main.wm?._destroying;
         if (destroying)
             live.shellDestroying = destroying.has(wa);
     }
-    catch (_) { }
+    catch { }
 }
 function _dumpLiveState(fx) {
     let live = {};
@@ -125,7 +126,7 @@ function _dumpLiveState(fx) {
         if (wa)
             _dumpParentState(a, wa, live);
     }
-    catch (_) { }
+    catch { }
     return live;
 }
 function _dumpRow(fx, now) {
@@ -175,7 +176,7 @@ function syncGlassRingSampler() {
             try {
                 _ringSampleOnce();
             }
-            catch (_) { }
+            catch { }
             return GLib.SOURCE_CONTINUE;
         });
     }
@@ -238,7 +239,7 @@ function _registerGlassDebugHooks() {
                     fx.setDebugView(mode);
                     n++;
                 }
-                catch (e) { }
+                catch { }
             }
             const msg = `[Liquid Glass] debug_view = ${mode} on ${n} instance(s)`;
             console.log(msg);
@@ -253,7 +254,7 @@ function _registerGlassDebugHooks() {
                     fx.setBlurRectEnabled(enabled);
                     n++;
                 }
-                catch (e) { }
+                catch { }
             }
             const msg = `[Liquid Glass] blur sub-rect ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
             console.log(msg);
@@ -365,19 +366,19 @@ function _registerGlassDebugHooks() {
                 try {
                     actor = fx.get_actor?.();
                 }
-                catch (e) { }
+                catch { }
                 const owner = (() => {
                     try {
                         return actor?.get_parent?.()?.get_name?.() ?? actor?.get_name?.() ?? '(?)';
                     }
-                    catch (e) {
+                    catch {
                         return '(?)';
                     }
                 })();
                 const res = (() => { try {
                     return fx.getResolution();
                 }
-                catch (e) {
+                catch {
                     return [0, 0];
                 } })();
                 lines.push(`── ${owner} res=${res[0]}x${res[1]}`);
@@ -388,7 +389,7 @@ function _registerGlassDebugHooks() {
                     try {
                         children = a.get_children();
                     }
-                    catch (e) {
+                    catch {
                         return;
                     }
                     for (const c of children) {
@@ -396,14 +397,14 @@ function _registerGlassDebugHooks() {
                         try {
                             name = c.get_name() || '(unnamed)';
                         }
-                        catch (e) { }
+                        catch { }
                         try {
                             vis = c.visible;
                             op = c.opacity;
                             geom = `t=(${Math.round(c.translation_x)},${Math.round(c.translation_y)}) ` +
                                 `p=(${Math.round(c.x)},${Math.round(c.y)}) size=${Math.round(c.width)}x${Math.round(c.height)}`;
                         }
-                        catch (e) { }
+                        catch { }
                         lines.push(`   ${'  '.repeat(depth)}${vis && op > 0 ? '   ' : 'XX '}"${name}" ` +
                             `vis=${vis} op=${op} culled=${!!c._lgCulled} ${geom}`);
                         walk(c, depth + 1);
@@ -428,19 +429,19 @@ function _registerGlassDebugHooks() {
                 try {
                     actor = fx.get_actor?.();
                 }
-                catch (e) { }
+                catch { }
                 const owner = (() => {
                     try {
                         return actor?.get_parent?.()?.get_name?.() ?? actor?.get_name?.() ?? '(?)';
                     }
-                    catch (e) {
+                    catch {
                         return '(?)';
                     }
                 })();
                 const res = (() => { try {
                     return fx.getResolution();
                 }
-                catch (e) {
+                catch {
                     return [0, 0];
                 } })();
                 lines.push(`── ${owner} res=${res[0]}x${res[1]} captureClip=${JSON.stringify(fx._lgCaptureClip ?? null)}`);
@@ -449,7 +450,7 @@ function _registerGlassDebugHooks() {
                     try {
                         children = a.get_children();
                     }
-                    catch (e) {
+                    catch {
                         return;
                     }
                     for (const c of children) {
@@ -457,19 +458,19 @@ function _registerGlassDebugHooks() {
                         try {
                             name = c.get_name() || `(${c.constructor?.name ?? 'actor'})`;
                         }
-                        catch (e) { }
+                        catch { }
                         try {
                             vis = c.visible;
                             op = c.opacity;
                         }
-                        catch (e) { }
+                        catch { }
                         if (!vis || op === 0) {
                             let geom = '?';
                             try {
                                 geom = `t=(${Math.round(c.translation_x)},${Math.round(c.translation_y)}) ` +
                                     `size=${Math.round(c.width)}x${Math.round(c.height)}`;
                             }
-                            catch (e) { }
+                            catch { }
                             lines.push(`   ${'  '.repeat(depth)}NOT PAINTED "${name}" vis=${vis} op=${op} ` +
                                 `culled=${!!c._lgCulled} ${geom}`);
                         }
@@ -492,7 +493,7 @@ function _registerGlassDebugHooks() {
                     fx.setCompositeRectEnabled(enabled);
                     n++;
                 }
-                catch (e) { }
+                catch { }
             }
             const msg = `[Liquid Glass] composite sub-rect ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
             console.log(msg);
@@ -505,7 +506,7 @@ function _registerGlassDebugHooks() {
                     fx.setCropPassEnabled(enabled);
                     n++;
                 }
-                catch (e) { }
+                catch { }
             }
             const msg = `[Liquid Glass] crop pass ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
             console.log(msg);
@@ -519,7 +520,7 @@ function _registerGlassDebugHooks() {
                     fx.setBlurCacheEnabled(enabled);
                     n++;
                 }
-                catch (e) { }
+                catch { }
             }
             const msg = `[Liquid Glass] cross-frame blur cache ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
             console.log(msg);
@@ -532,7 +533,7 @@ function _registerGlassDebugHooks() {
                     fx.setEarlyExitEnabled(enabled);
                     n++;
                 }
-                catch (e) { }
+                catch { }
             }
             const msg = `[Liquid Glass] early exits ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
             console.log(msg);

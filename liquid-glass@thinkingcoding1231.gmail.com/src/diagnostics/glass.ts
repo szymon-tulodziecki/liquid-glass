@@ -32,13 +32,14 @@ function _ringLine(fx: any): string | null {
   if (!wa) return null;
   const mw = wa.get_meta_window ? wa.get_meta_window() : null;
   const wg: any = wa.get_parent();
+  const wgAllocated = wg?.has_allocation() ? 1 : 0;
   return `${fx._diagOwnerLabel || '?'}|sc=${wa.scale_x.toFixed(3)},${wa.scale_y.toFixed(3)}` +
     `|op=${wa.opacity}|pos=${Math.round(wa.x)},${Math.round(wa.y)}` +
     `|map=${wa.mapped ? 1 : 0}|alloc=${wa.has_allocation() ? 1 : 0}` +
     `|gAlloc=${a.has_allocation() ? 1 : 0}|gPos=${Math.round(a.x)},${Math.round(a.y)}` +
     `|gSize=${Math.round(a.width)}x${Math.round(a.height)}` +
     `|min=${mw?.minimized ? 1 : 0}` +
-    `|wgAlloc=${wg ? (wg.has_allocation() ? 1 : 0) : '-'}` +
+    `|wgAlloc=${wg ? wgAllocated : '-'}` +
     `|views=${(wa.peek_stage_views() || []).length}` +
     _ringTransition(wa);
 }
@@ -50,7 +51,7 @@ function _ringSampleOnce(): void {
     let line: string | null;
     try {
       line = _ringLine(fx);
-    } catch (_) {
+    } catch {
       continue;
     }
     if (line === null || _ringLast.get(fx) === line) continue;
@@ -68,7 +69,7 @@ function _dumpWindowState(wa: any, live: any): void {
       const r = mw.get_frame_rect();
       live.wRect = `${r.x},${r.y},${r.width}x${r.height}`;
     }
-  } catch (_) { }
+  } catch { }
 }
 
 function _dumpTransitions(wa: any, live: any): void {
@@ -81,7 +82,7 @@ function _dumpTransitions(wa: any, live: any): void {
           `,dur=${tr.get_duration()}` +
           `,clock=${tr.get_frame_clock() ? 'set' : 'NULL'}`;
       }
-    } catch (_) { }
+    } catch { }
   }
 }
 
@@ -97,11 +98,11 @@ function _dumpParentState(a: any, wa: any, live: any): void {
     const wg: any = wa.get_parent();
     if (wg) live.wgViews = (wg.peek_stage_views() || []).length;
     live.glassViews = (a.peek_stage_views() || []).length;
-  } catch (_) { }
+  } catch { }
   try {
     const destroying: any = (Main as any).wm?._destroying;
     if (destroying) live.shellDestroying = destroying.has(wa);
-  } catch (_) { }
+  } catch { }
 }
 
 function _dumpLiveState(fx: any): any {
@@ -118,7 +119,7 @@ function _dumpLiveState(fx: any): any {
     };
     const wa: any = a.get_parent();
     if (wa) _dumpParentState(a, wa, live);
-  } catch (_) { }
+  } catch { }
   return live;
 }
 
@@ -161,7 +162,7 @@ function syncGlassRingSampler(): void {
     _ringSamplerId = 0;
   } else if (!_ringSamplerId) {
     _ringSamplerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT_IDLE, _ringSamplerInterval, () => {
-      try { _ringSampleOnce(); } catch (_) { }
+      try { _ringSampleOnce(); } catch { }
       return GLib.SOURCE_CONTINUE;
     });
   }
@@ -226,7 +227,7 @@ function _registerGlassDebugHooks(): void {
     debugView: (mode: number) => {
       let n = 0;
       for (const fx of _liveEffects) {
-        try { fx.setDebugView(mode); n++; } catch (e) { }
+        try { fx.setDebugView(mode); n++; } catch { }
       }
       const msg = `[Liquid Glass] debug_view = ${mode} on ${n} instance(s)`;
       console.log(msg);
@@ -238,7 +239,7 @@ function _registerGlassDebugHooks(): void {
     blurRect: (enabled: boolean) => {
       let n = 0;
       for (const fx of _liveEffects) {
-        try { fx.setBlurRectEnabled(enabled); n++; } catch (e) { }
+        try { fx.setBlurRectEnabled(enabled); n++; } catch { }
       }
       const msg = `[Liquid Glass] blur sub-rect ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
       console.log(msg);
@@ -359,25 +360,25 @@ function _registerGlassDebugHooks(): void {
       const lines: string[] = [];
       for (const fx of _liveEffects) {
         let actor: any = null;
-        try { actor = (fx as any).get_actor?.(); } catch (e) { }
+        try { actor = (fx as any).get_actor?.(); } catch { }
         const owner = (() => {
           try { return actor?.get_parent?.()?.get_name?.() ?? actor?.get_name?.() ?? '(?)'; }
-          catch (e) { return '(?)'; }
+          catch { return '(?)'; }
         })();
-        const res = (() => { try { return (fx as any).getResolution(); } catch (e) { return [0, 0]; } })();
+        const res = (() => { try { return (fx as any).getResolution(); } catch { return [0, 0]; } })();
         lines.push(`── ${owner} res=${res[0]}x${res[1]}`);
         const walk = (a: any, depth: number) => {
           if (depth > maxDepth) return;
           let children: any[] = [];
-          try { children = a.get_children(); } catch (e) { return; }
+          try { children = a.get_children(); } catch { return; }
           for (const c of children) {
             let name = '(?)', vis = true, op = 255, geom = '?';
-            try { name = c.get_name() || '(unnamed)'; } catch (e) { }
+            try { name = c.get_name() || '(unnamed)'; } catch { }
             try {
               vis = c.visible; op = c.opacity;
               geom = `t=(${Math.round(c.translation_x)},${Math.round(c.translation_y)}) ` +
                 `p=(${Math.round(c.x)},${Math.round(c.y)}) size=${Math.round(c.width)}x${Math.round(c.height)}`;
-            } catch (e) { }
+            } catch { }
             lines.push(`   ${'  '.repeat(depth)}${vis && op > 0 ? '   ' : 'XX '}"${name}" ` +
               `vis=${vis} op=${op} culled=${!!(c as any)._lgCulled} ${geom}`);
             walk(c, depth + 1);
@@ -400,26 +401,26 @@ function _registerGlassDebugHooks(): void {
       const lines: string[] = [];
       for (const fx of _liveEffects) {
         let actor: any = null;
-        try { actor = (fx as any).get_actor?.(); } catch (e) { }
+        try { actor = (fx as any).get_actor?.(); } catch { }
         const owner = (() => {
           try { return actor?.get_parent?.()?.get_name?.() ?? actor?.get_name?.() ?? '(?)'; }
-          catch (e) { return '(?)'; }
+          catch { return '(?)'; }
         })();
-        const res = (() => { try { return (fx as any).getResolution(); } catch (e) { return [0, 0]; } })();
+        const res = (() => { try { return (fx as any).getResolution(); } catch { return [0, 0]; } })();
         lines.push(`── ${owner} res=${res[0]}x${res[1]} captureClip=${JSON.stringify((fx as any)._lgCaptureClip ?? null)}`);
         const walk = (a: any, depth: number) => {
           let children: any[] = [];
-          try { children = a.get_children(); } catch (e) { return; }
+          try { children = a.get_children(); } catch { return; }
           for (const c of children) {
             let name = '(?)', vis = true, op = 255;
-            try { name = c.get_name() || `(${c.constructor?.name ?? 'actor'})`; } catch (e) { }
-            try { vis = c.visible; op = c.opacity; } catch (e) { }
+            try { name = c.get_name() || `(${c.constructor?.name ?? 'actor'})`; } catch { }
+            try { vis = c.visible; op = c.opacity; } catch { }
             if (!vis || op === 0) {
               let geom = '?';
               try {
                 geom = `t=(${Math.round(c.translation_x)},${Math.round(c.translation_y)}) ` +
                   `size=${Math.round(c.width)}x${Math.round(c.height)}`;
-              } catch (e) { }
+              } catch { }
               lines.push(`   ${'  '.repeat(depth)}NOT PAINTED "${name}" vis=${vis} op=${op} ` +
                 `culled=${!!(c as any)._lgCulled} ${geom}`);
             } else if (depth < 6) {
@@ -437,7 +438,7 @@ function _registerGlassDebugHooks(): void {
     compositeRect: (enabled: boolean) => {
       let n = 0;
       for (const fx of _liveEffects) {
-        try { fx.setCompositeRectEnabled(enabled); n++; } catch (e) { }
+        try { fx.setCompositeRectEnabled(enabled); n++; } catch { }
       }
       const msg = `[Liquid Glass] composite sub-rect ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
       console.log(msg);
@@ -447,7 +448,7 @@ function _registerGlassDebugHooks(): void {
     cropPass: (enabled: boolean) => {
       let n = 0;
       for (const fx of _liveEffects) {
-        try { fx.setCropPassEnabled(enabled); n++; } catch (e) { }
+        try { fx.setCropPassEnabled(enabled); n++; } catch { }
       }
       const msg = `[Liquid Glass] crop pass ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
       console.log(msg);
@@ -457,7 +458,7 @@ function _registerGlassDebugHooks(): void {
       blurCacheDefault = !!enabled;
       let n = 0;
       for (const fx of _liveEffects) {
-        try { fx.setBlurCacheEnabled(enabled); n++; } catch (e) { }
+        try { fx.setBlurCacheEnabled(enabled); n++; } catch { }
       }
       const msg = `[Liquid Glass] cross-frame blur cache ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
       console.log(msg);
@@ -466,7 +467,7 @@ function _registerGlassDebugHooks(): void {
     earlyExit: (enabled: boolean) => {
       let n = 0;
       for (const fx of _liveEffects) {
-        try { fx.setEarlyExitEnabled(enabled); n++; } catch (e) { }
+        try { fx.setEarlyExitEnabled(enabled); n++; } catch { }
       }
       const msg = `[Liquid Glass] early exits ${enabled ? 'ENABLED' : 'DISABLED'} on ${n} instance(s)`;
       console.log(msg);
