@@ -8,6 +8,7 @@ import { QuickSettingsManager } from './dist/quickSettingsManager.js';
 import { OsdManager } from './dist/osdManager.js';
 import { ApplicationManager } from './dist/applicationManager.js';
 import { WindowListService } from './dist/windowListService.js';
+import { DockStatsWidget } from './dist/stats/dockWidget.js';
 import { Logger } from './dist/logger.js';
 import { setUtilsLogger, adaptiveColorTweener, destroySharedBackgroundSource,
   releaseAllClonedWindowActors } from './dist/utils.js';
@@ -94,6 +95,11 @@ export default class LiquidGlassExtension extends Extension {
       this._windowListService.setup();
     });
 
+    start('dockStatsWidget', () => {
+      this._dockStatsWidget = new DockStatsWidget(this._settings);
+      this._dockStatsWidget.setup();
+    });
+
     this._quickSettingsTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
       this._quickSettingsTimeoutId = 0;
       start('quickSettingsManager', () => {
@@ -141,6 +147,11 @@ export default class LiquidGlassExtension extends Extension {
 
   _findDashToDock() {
     const containers = this._collectDashContainers();
+    try {
+      this._dockStatsWidget?.syncDocks(containers);
+    } catch (error) {
+      this._logger.log(`[Liquid Glass] Dock widget discovery failed: ${error}`);
+    }
 
     if (containers.length === 0)
       return false;
@@ -323,6 +334,11 @@ export default class LiquidGlassExtension extends Extension {
         }
       }
     };
+
+    teardown('dockStatsWidget', () => {
+      this._dockStatsWidget?.cleanup();
+      this._dockStatsWidget = null;
+    });
 
     teardown('panelMenuManager', () => {
       this._panelMenuManager?.cleanup();

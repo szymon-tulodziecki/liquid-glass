@@ -2,6 +2,8 @@ import Adw from 'gi://Adw';
 import {PreferenceControls} from './controls.js';
 import {WindowRules} from './windows.js';
 import {sharedKeys, TEXT_KEYS, MENU_KEYS, POPUP_KEYS, MOTION, QUALITY, booleanChoices} from './model.js';
+import {buildAdvancedPreferences} from './advanced.js';
+import {addStatsWidget} from './stats-widget.js';
 
 export function buildPreferences(window, settings) {
   window.set_default_size(720, 720);
@@ -14,6 +16,11 @@ export function buildPreferences(window, settings) {
   };
 
   const appearance = page('Appearance', 'preferences-desktop-appearance-symbolic');
+  const view = controls.group(appearance, 'Settings');
+  controls.choice(view, 'Settings view', [
+    {title: 'Simple', patch: {'preferences-advanced': false}},
+    {title: 'Advanced', patch: {'preferences-advanced': true}},
+  ], '', false);
   const glass = controls.group(appearance, 'Glass', 'One look for all effects. Existing differences stay until you change a control.');
   controls.number(glass, 'Blur', sharedKeys('blur-radius'), 0, 30, 1);
   controls.number(glass, 'Corners', [...sharedKeys('corner-radius'), 'quick-settings-toggle-corner-radius'], 0, 200, 1);
@@ -33,8 +40,9 @@ export function buildPreferences(window, settings) {
   controls.choice(surfaces, 'Menus', booleanChoices(MENU_KEYS), 'Calendar, quick settings, top bar and desktop');
   controls.choice(surfaces, 'Popups', booleanChoices(POPUP_KEYS), 'Notifications and volume / brightness indicators');
   new WindowRules(settings, controls).add(effects);
+  addStatsWidget(effects, controls);
 
-  const advanced = page('Advanced', 'applications-engineering-symbolic');
+  const advanced = page('Rendering', 'applications-engineering-symbolic');
   const rendering = controls.group(advanced, 'Rendering');
   controls.choice(rendering, 'Quality', QUALITY);
   controls.number(rendering, 'Refraction', ['glass-displacement-scale'], 0, 200, 1);
@@ -54,5 +62,13 @@ export function buildPreferences(window, settings) {
   const diagnostics = controls.group(advanced, 'Troubleshooting');
   controls.toggle(diagnostics, 'Logging', 'output-logs');
   controls.toggle(diagnostics, 'Render diagnostics', 'glass-debug-diagnostics', 'Adds rendering overhead; leave off for normal use.');
+  let showAdvanced;
+  controls.watch(['preferences-advanced'], () => {
+    const enabled = settings.get_boolean('preferences-advanced');
+    for (const group of [glass, behavior, surfaces, rendering]) group.visible = !enabled;
+    if (enabled && !showAdvanced)
+      showAdvanced = buildAdvancedPreferences({appearance, effects, rendering: advanced}, controls);
+    showAdvanced?.(enabled);
+  });
   return controls;
 }
