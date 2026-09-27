@@ -1,4 +1,4 @@
-import { stepMenuSprings, applyMenuFrame, showMenuAtRest } from './animation/menuSpring.js';
+import { stepMenuSpring, applyMenuFrame, showMenuAtRest } from './animation/menuSpring.js';
 import { addFrameTicker, removeFrameTicker, normalizeAnimationIntervalMs } from './animation/frameTicker.js';
 import { Spring, SwiftSpring } from './animation/spring.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -85,7 +85,6 @@ export class UIManager {
     _lastBgX;
     _lastBgY;
     _springScale;
-    _springPos;
     _springStiffness;
     _springDamping;
     _springMass;
@@ -93,7 +92,6 @@ export class UIManager {
     _swiftResponse = 0.3;
     _swiftDampingFraction = 0.65;
     _swiftSpringScale;
-    _swiftSpringPos;
     _enableAnimation;
     _interfaceSettings = null;
     _accentColorSignalId = 0;
@@ -124,12 +122,10 @@ export class UIManager {
         this._menuXoffset = 0;
         this._menuYoffset = 0;
         this._springScale = new Spring(120, 8, 1.0);
-        this._springPos = new Spring(300, 12, 1.0);
         this._springStiffness = 120;
         this._springDamping = 8;
         this._springMass = 1.0;
         this._swiftSpringScale = new SwiftSpring(this._swiftResponse, this._swiftDampingFraction);
-        this._swiftSpringPos = new SwiftSpring(this._swiftResponse, this._swiftDampingFraction);
         this._enableAnimation = false;
         this._tickId = 0;
         this._contrastSampler = new StageContrastSampler();
@@ -170,7 +166,6 @@ export class UIManager {
         this._springDamping = this._settings.get_double(this._key('spring-damping'));
         this._springMass = this._settings.get_double(this._key('spring-mass'));
         this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
-        this._springPos.updateParams(this._springStiffness, this._springDamping, this._springMass);
         this._interfaceSettings = new Gio.Settings({ schema_id: 'org.gnome.desktop.interface' });
         this._accentColorSignalId = this._interfaceSettings.connect('changed::accent-color', () => {
             GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
@@ -1075,17 +1070,12 @@ export class UIManager {
             this.bgActor.remove_all_transitions();
         if (this._swiftAnimation) {
             this._swiftSpringScale.updateParams(this._swiftResponse, this._swiftDampingFraction);
-            this._swiftSpringPos.updateParams(this._swiftResponse, this._swiftDampingFraction);
             this._swiftSpringScale.target = targetValue;
-            this._swiftSpringPos.target = targetValue;
             if (Number.isNaN(this._swiftSpringScale.value))
                 this._swiftSpringScale.value = 0;
-            if (Number.isNaN(this._swiftSpringPos.value))
-                this._swiftSpringPos.value = 0;
         }
         else {
             this._springScale.target = targetValue;
-            this._springPos.target = targetValue;
         }
         if (this._tickId === 0) {
             let lastTime = GLib.get_monotonic_time();
@@ -1097,7 +1087,7 @@ export class UIManager {
                 let currentTime = GLib.get_monotonic_time();
                 let elapsedMs = (currentTime - lastTime) / 1000;
                 lastTime = currentTime;
-                const frame = stepMenuSprings(this._swiftAnimation ? this._swiftSpringScale : this._springScale, this._swiftAnimation ? this._swiftSpringPos : this._springPos, elapsedMs);
+                const frame = stepMenuSpring(this._swiftAnimation ? this._swiftSpringScale : this._springScale, elapsedMs);
                 if (frame.stopped)
                     this._tickId = 0;
                 applyMenuFrame(frame, this.animActor, this.bgActor, this.menu.actor, () => this._syncGeometry());

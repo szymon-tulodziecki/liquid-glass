@@ -1,5 +1,5 @@
 import { ToggleStyles } from './quickSettings/toggleStyles.js';
-import { stepMenuSprings, applyMenuFrame, showMenuAtRest } from './animation/menuSpring.js';
+import { stepMenuSpring, applyMenuFrame, showMenuAtRest } from './animation/menuSpring.js';
 import { addFrameTicker, removeFrameTicker, normalizeAnimationIntervalMs } from './animation/frameTicker.js';
 import { Spring } from './animation/spring.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -118,7 +118,6 @@ export class QuickSettingsManager {
   private _menuYoffset: number;
 
   private _springScale: Spring;
-  private _springPos: Spring;
   private _springStiffness: number;
   private _springDamping: number;
   private _springMass: number;
@@ -194,7 +193,6 @@ export class QuickSettingsManager {
     this._menuYoffset = 0;
 
     this._springScale = new Spring(120, 8, 1.0);
-    this._springPos = new Spring(300, 12, 1.0);
     this._springStiffness = 120;
     this._springDamping = 8;
     this._springMass = 1.0;
@@ -225,7 +223,6 @@ export class QuickSettingsManager {
     this._springDamping = this._settings.get_double('quick-settings-spring-damping');
     this._springMass = this._settings.get_double('quick-settings-spring-mass');
     this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
-    this._springPos.updateParams(this._springStiffness, this._springDamping, this._springMass);
 
     this._applyTo = this._settings.get_int('quick-settings-apply-to') === 1 ? 'toggles' : 'background';
     this._toggleBaseStrength = this._settings.get_double('quick-settings-toggle-tint-strength');
@@ -1520,7 +1517,6 @@ export class QuickSettingsManager {
     if (this.bgActor) this.bgActor.remove_all_transitions();
 
     this._springScale.target = targetValue;
-    this._springPos.target = targetValue;
 
     if (this._tickId === 0) {
       let lastTime = GLib.get_monotonic_time();
@@ -1535,7 +1531,7 @@ export class QuickSettingsManager {
         let elapsedMs = (currentTime - lastTime) / 1000;
         lastTime = currentTime;
 
-        const frame = stepMenuSprings(this._springScale, this._springPos, elapsedMs);
+        const frame = stepMenuSpring(this._springScale, elapsedMs);
         if (frame.stopped) this._tickId = 0;
         applyMenuFrame(frame, this.animActor, this.bgActor, this.menu.actor, () => this._syncGeometry());
         return frame.stopped ? GLib.SOURCE_REMOVE : GLib.SOURCE_CONTINUE;

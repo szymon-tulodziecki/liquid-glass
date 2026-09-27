@@ -1,4 +1,4 @@
-import { stepMenuSprings, applyMenuFrame, showMenuAtRest } from './animation/menuSpring.js';
+import { stepMenuSpring, applyMenuFrame, showMenuAtRest } from './animation/menuSpring.js';
 import { addFrameTicker, removeFrameTicker, normalizeAnimationIntervalMs } from './animation/frameTicker.js';
 import { Spring, SwiftSpring } from './animation/spring.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -97,7 +97,6 @@ export class UIManager {
   private _lastBgY: number | undefined;
 
   private _springScale: Spring;
-  private _springPos: Spring;
   private _springStiffness: number;
   private _springDamping: number;
   private _springMass: number;
@@ -107,7 +106,6 @@ export class UIManager {
   private _swiftDampingFraction: number = 0.65;
 
   private _swiftSpringScale: SwiftSpring;
-  private _swiftSpringPos: SwiftSpring;
 
   private _enableAnimation: boolean;
 
@@ -151,13 +149,11 @@ export class UIManager {
     this._menuYoffset = 0;
 
     this._springScale = new Spring(120, 8, 1.0);
-    this._springPos = new Spring(300, 12, 1.0);
     this._springStiffness = 120;
     this._springDamping = 8;
     this._springMass = 1.0;
 
     this._swiftSpringScale = new SwiftSpring(this._swiftResponse, this._swiftDampingFraction);
-    this._swiftSpringPos = new SwiftSpring(this._swiftResponse, this._swiftDampingFraction);
 
     this._enableAnimation = false;
     this._tickId = 0;
@@ -201,7 +197,6 @@ export class UIManager {
     this._springDamping = this._settings.get_double(this._key('spring-damping'));
     this._springMass = this._settings.get_double(this._key('spring-mass'));
     this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
-    this._springPos.updateParams(this._springStiffness, this._springDamping, this._springMass);
 
     this._interfaceSettings = new Gio.Settings({ schema_id: 'org.gnome.desktop.interface' });
     this._accentColorSignalId = this._interfaceSettings.connect('changed::accent-color', () => {
@@ -1228,14 +1223,10 @@ export class UIManager {
 
     if (this._swiftAnimation) {
       this._swiftSpringScale.updateParams(this._swiftResponse, this._swiftDampingFraction);
-      this._swiftSpringPos.updateParams(this._swiftResponse, this._swiftDampingFraction);
       this._swiftSpringScale.target = targetValue;
-      this._swiftSpringPos.target = targetValue;
       if (Number.isNaN(this._swiftSpringScale.value)) this._swiftSpringScale.value = 0;
-      if (Number.isNaN(this._swiftSpringPos.value)) this._swiftSpringPos.value = 0;
     } else {
       this._springScale.target = targetValue;
-      this._springPos.target = targetValue;
     }
 
     if (this._tickId === 0) {
@@ -1251,8 +1242,7 @@ export class UIManager {
         let elapsedMs = (currentTime - lastTime) / 1000;
         lastTime = currentTime;
 
-        const frame = stepMenuSprings(this._swiftAnimation ? this._swiftSpringScale : this._springScale,
-          this._swiftAnimation ? this._swiftSpringPos : this._springPos, elapsedMs);
+        const frame = stepMenuSpring(this._swiftAnimation ? this._swiftSpringScale : this._springScale, elapsedMs);
         if (frame.stopped) this._tickId = 0;
         applyMenuFrame(frame, this.animActor, this.bgActor, this.menu.actor, () => this._syncGeometry());
         return frame.stopped ? GLib.SOURCE_REMOVE : GLib.SOURCE_CONTINUE;
