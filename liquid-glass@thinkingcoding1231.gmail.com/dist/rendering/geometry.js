@@ -12,6 +12,7 @@ export class GlassGeometry {
     compositeEnabled;
     static USE_BLUR_RECT = true;
     static EDGE_LENS_REACH = 96;
+    static EDGE_FOOTPRINT_SPREAD = 0.9 * 32;
     static BLUR_RECT_MIN_MARGIN = 12;
     static BLUR_RECT_MIN_SAVING = 0.95;
     static BLUR_RECT_QUANTUM = 64;
@@ -100,12 +101,7 @@ export class GlassGeometry {
         if (!body)
             return null;
         const [x0, y0, x1, y1] = body;
-        const ior = this._uniforms.get('ior') ?? 1.5;
-        const dispScale = this._uniforms.get('displacement_scale') ?? 0;
-        const eta = 1.0 / Math.max(ior, 1.001);
-        const bend = Math.min(eta / Math.sqrt(Math.max(1 - eta * eta, 1e-6)), 1 / 0.15);
-        const minRes = Math.max(Math.min(resW, resH), 1);
-        const dispPx = Math.min(0.30 * minRes, Math.max(bend * Math.max(dispScale, 0), GlassGeometry.EDGE_LENS_REACH));
+        const dispPx = this._samplingReachPx(resW, resH);
         const feather = Math.max(this._uniforms.get('edge_smoothing') ?? 0, 0.75);
         const blurReach = 3 * Math.max(Math.min(radius, 30), 0);
         const extra = GlassGeometry.BLUR_RECT_MIN_MARGIN + feather + 2.5 +
@@ -129,6 +125,11 @@ export class GlassGeometry {
             return null;
         return [cx, cy, cw, ch];
     }
+    _samplingReachPx(resW, resH) {
+        const chroma = Math.max(this._uniforms.get('chroma_strength') ?? 0, 0);
+        const minRes = Math.max(Math.min(resW, resH), 1);
+        return Math.min(0.30 * minRes, GlassGeometry.EDGE_LENS_REACH + GlassGeometry.EDGE_FOOTPRINT_SPREAD + chroma);
+    }
     blurRect() {
         if (!this.blurEnabled)
             return null;
@@ -140,18 +141,11 @@ export class GlassGeometry {
         if (!body)
             return null;
         const [x0, y0, x1, y1] = body;
-        const ior = this._uniforms.get('ior') ?? 1.5;
-        const dispScale = this._uniforms.get('displacement_scale') ?? 0;
-        const eta = 1.0 / Math.max(ior, 1.001);
-        const bend = Math.min(eta / Math.sqrt(Math.max(1 - eta * eta, 1e-6)), 1 / 0.15);
-        const minRes = Math.max(Math.min(resW, resH), 1);
-        const dispPx = Math.min(0.30 * minRes, Math.max(bend * Math.max(dispScale, 0), GlassGeometry.EDGE_LENS_REACH));
-        const dispX = dispPx;
-        const dispY = dispPx;
+        const dispPx = this._samplingReachPx(resW, resH);
         const feather = Math.max(this._uniforms.get('edge_smoothing') ?? 0, 0.75);
         const extra = GlassGeometry.BLUR_RECT_MIN_MARGIN + feather + 2.5;
-        const mx = Math.ceil(dispX + extra);
-        const my = Math.ceil(dispY + extra);
+        const mx = Math.ceil(dispPx + extra);
+        const my = Math.ceil(dispPx + extra);
         const maxW = Math.round(resW);
         const maxH = Math.round(resH);
         let bx = Math.max(0, Math.floor(x0 - mx));
