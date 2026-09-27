@@ -60,6 +60,19 @@ test('geometry clipping remains conservative for shadows, blur reach and multipl
   assert.ok(geometry.captureClip(15), 'capture clipping is independent of blur clipping');
 });
 
+test('refraction margins are pixels on both axes and cover the lens reach', () => {
+  const { GlassGeometry } = loadModule(path.join(dist, 'rendering/geometry.js'));
+  const uniforms = new Map(Object.entries({ resolution_x: 1920, resolution_y: 1080,
+    padding: 0, shadow_radius: 0, shadow_max_radius: 0, shadow_intensity: 0,
+    edge_smoothing: 0.5, displacement_scale: 10.5, ior: 2.4 }));
+  const geometry = new GlassGeometry(uniforms);
+  geometry.rect = [900, 500, 120, 80];
+  const capture = geometry.captureClip(0);
+  const left = 900 - capture[0], top = 500 - capture[1];
+  assert.equal(left, top, 'the same margin horizontally and vertically');
+  assert.ok(left >= GlassGeometry.EDGE_LENS_REACH, `margin ${left} covers the lens reach`);
+});
+
 test('invalid, empty and almost-fullscreen geometry falls back to the full capture', () => {
   const { GlassGeometry } = loadModule(path.join(dist, 'rendering/geometry.js'));
   const uniforms = new Map();
