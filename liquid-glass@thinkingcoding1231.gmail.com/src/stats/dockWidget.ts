@@ -21,6 +21,7 @@ export class DockStatsWidget {
   private idle = 0;
   private waitingForApp = false;
   private pinned = false;
+  private lastFavorites: string[] = [];
   private dockDestroyIds = new Map<any, number>();
 
   constructor(settings: Gio.Settings) { this.settings = settings; }
@@ -33,7 +34,8 @@ export class DockStatsWidget {
     })]);
     const apps = Shell.AppSystem.get_default();
     this.signals.push([apps, apps.connect('installed-changed', () => { this.pin(); return false; })]);
-    this.pinned = this.favorites().includes(APP_ID);
+    this.lastFavorites = this.favorites();
+    this.pinned = this.lastFavorites.includes(APP_ID);
     this.signals.push([global.settings, global.settings.connect('changed::favorite-apps', () => this.followFavorites())]);
     this.refresh();
   }
@@ -60,10 +62,13 @@ export class DockStatsWidget {
   }
 
   private followFavorites() {
-    const pinned = this.favorites().includes(APP_ID);
+    const previous = this.lastFavorites;
+    this.lastFavorites = this.favorites();
+    const pinned = this.lastFavorites.includes(APP_ID);
     const wasPinned = this.pinned;
     this.pinned = pinned;
     if (pinned === wasPinned || pinned === this.settings.get_boolean('dock-stats-widget')) return;
+    if (!pinned) this.settings.set_int('dock-stats-position', previous.indexOf(APP_ID));
     this.settings.set_boolean('dock-stats-widget', pinned);
   }
 
@@ -74,11 +79,9 @@ export class DockStatsWidget {
       const index = favorites.indexOf(APP_ID);
       if (index >= 0) {
         this.settings.set_int('dock-stats-position', index);
-        favorites.splice(index, 1);
         this.pinned = false;
-        global.settings.set_strv('favorite-apps', favorites);
+        global.settings.set_strv('favorite-apps', favorites.filter(id => id !== APP_ID));
       }
-      this.removeLauncher();
       return;
     }
     this.ensureLauncher();
@@ -96,20 +99,20 @@ export class DockStatsWidget {
     return GLib.build_filenamev([GLib.get_user_data_dir(), 'applications', APP_ID]);
   }
 
-  private removeLauncher() {
-    try { Gio.File.new_for_path(this.launcherPath()).delete(null); } catch { }
-  }
-
   private ensureLauncher() {
     const path = this.launcherPath();
     const file = Gio.File.new_for_path(path);
-    if (file.query_exists(null)) {
-      const [, contents] = file.load_contents(null);
-      if (new TextDecoder().decode(contents) === LAUNCHER) return;
-    } else {
-      GLib.mkdir_with_parents(GLib.path_get_dirname(path), 0o755);
+    try {
+      if (file.query_exists(null)) {
+        const [, contents] = file.load_contents(null);
+        if (new TextDecoder().decode(contents) === LAUNCHER) return;
+      } else {
+        GLib.mkdir_with_parents(GLib.path_get_dirname(path), 0o755);
+      }
+      file.replace_contents(new TextEncoder().encode(LAUNCHER), null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+    } catch (error) {
+      console.error(`[Liquid Glass] Could not write the Vitals dock launcher ${path}: ${error}`);
     }
-    file.replace_contents(new TextEncoder().encode(LAUNCHER), null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
   }
 
   private pin() {
@@ -181,6 +184,7 @@ export class DockStatsWidget {
   }
 
   private tick() {
+    if (this.icons.size === 0) return;
     this.refreshSource();
     const vitals = (Main.panel.statusArea as any).vitalsMenu;
     const interval = vitals?._settings?.get_int('update-time') ?? 5;
@@ -199,7 +203,9 @@ export class DockStatsWidget {
     this.detach = null;
     this.values = null;
     this.history = new StatsHistory();
-    for (const [box, ids] of this.boxes) for (const id of ids) box.disconnect(id);
+    for (const [box, ids] of this.boxes) for (const id of ids) {
+      try { box.disconnect(id); } catch { }
+    }
     this.boxes.clear();
     for (const icon of this.icons.keys()) this.releaseIcon(icon);
   }
@@ -207,9 +213,11 @@ export class DockStatsWidget {
   private releaseIcon(icon: any) {
     const original = this.icons.get(icon)!;
     this.icons.delete(icon);
-    icon.disconnect(original.destroyId);
-    if (original.gicon) icon.gicon = original.gicon;
-    else icon.icon_name = original.name;
+    try {
+      icon.disconnect(original.destroyId);
+      if (original.gicon) icon.gicon = original.gicon;
+      else icon.icon_name = original.name;
+    } catch { }
   }
 
   cleanup() {

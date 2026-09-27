@@ -172,7 +172,8 @@ test('unpinning from the dock turns the widget off, so a later enable does not r
   f.favorites.removeFavorite('liquid-glass-vitals-widget.desktop');
   assert.equal(f.settings.enabled, false);
   assert.equal(f.timers.size, 0);
-  assert.equal(f.launcher(), null, 'the launcher is removed with the widget');
+  assert.notEqual(f.launcher(), null, 'the launcher stays so GNOME can undo the unpin');
+  assert.equal(f.settings.position, 1, 'the position it was unpinned from is remembered');
   f.apps.emit('installed-changed');
   f.manager.cleanup();
   const again = fixture(false);
@@ -240,4 +241,14 @@ test('detaching from a prototype method leaves no own property behind', () => {
   assert.equal(Object.hasOwn(values, 'returnIfDifferent'), false);
   Values.prototype.returnIfDifferent = () => 'patched';
   assert.equal(values.returnIfDifferent(), 'patched');
+});
+
+test('switching off removes every copy of the widget from favorites', () => {
+  const f = fixture();
+  f.favorites.ids = ['liquid-glass-vitals-widget.desktop', 'first.desktop', 'liquid-glass-vitals-widget.desktop'];
+  f.settings.enabled = false; f.settings.emit('changed::dock-stats-widget');
+  assert.deepEqual(f.favorites.ids, ['first.desktop']);
+  f.favorites.set_strv('favorite-apps', ['first.desktop', 'other.desktop']);
+  assert.equal(f.settings.enabled, false);
+  f.manager.cleanup();
 });

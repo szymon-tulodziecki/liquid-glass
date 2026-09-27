@@ -19,6 +19,7 @@ export class DockStatsWidget {
     idle = 0;
     waitingForApp = false;
     pinned = false;
+    lastFavorites = [];
     dockDestroyIds = new Map();
     constructor(settings) { this.settings = settings; }
     setup() {
@@ -29,7 +30,8 @@ export class DockStatsWidget {
             })]);
         const apps = Shell.AppSystem.get_default();
         this.signals.push([apps, apps.connect('installed-changed', () => { this.pin(); return false; })]);
-        this.pinned = this.favorites().includes(APP_ID);
+        this.lastFavorites = this.favorites();
+        this.pinned = this.lastFavorites.includes(APP_ID);
         this.signals.push([global.settings, global.settings.connect('changed::favorite-apps', () => this.followFavorites())]);
         this.refresh();
     }
@@ -58,11 +60,15 @@ export class DockStatsWidget {
         return global.settings.get_strv('favorite-apps');
     }
     followFavorites() {
-        const pinned = this.favorites().includes(APP_ID);
+        const previous = this.lastFavorites;
+        this.lastFavorites = this.favorites();
+        const pinned = this.lastFavorites.includes(APP_ID);
         const wasPinned = this.pinned;
         this.pinned = pinned;
         if (pinned === wasPinned || pinned === this.settings.get_boolean('dock-stats-widget'))
             return;
+        if (!pinned)
+            this.settings.set_int('dock-stats-position', previous.indexOf(APP_ID));
         this.settings.set_boolean('dock-stats-widget', pinned);
     }
     refresh() {
@@ -72,11 +78,9 @@ export class DockStatsWidget {
             const index = favorites.indexOf(APP_ID);
             if (index >= 0) {
                 this.settings.set_int('dock-stats-position', index);
-                favorites.splice(index, 1);
                 this.pinned = false;
-                global.settings.set_strv('favorite-apps', favorites);
+                global.settings.set_strv('favorite-apps', favorites.filter(id => id !== APP_ID));
             }
-            this.removeLauncher();
             return;
         }
         this.ensureLauncher();
@@ -93,24 +97,23 @@ export class DockStatsWidget {
     launcherPath() {
         return GLib.build_filenamev([GLib.get_user_data_dir(), 'applications', APP_ID]);
     }
-    removeLauncher() {
-        try {
-            Gio.File.new_for_path(this.launcherPath()).delete(null);
-        }
-        catch { }
-    }
     ensureLauncher() {
         const path = this.launcherPath();
         const file = Gio.File.new_for_path(path);
-        if (file.query_exists(null)) {
-            const [, contents] = file.load_contents(null);
-            if (new TextDecoder().decode(contents) === LAUNCHER)
-                return;
+        try {
+            if (file.query_exists(null)) {
+                const [, contents] = file.load_contents(null);
+                if (new TextDecoder().decode(contents) === LAUNCHER)
+                    return;
+            }
+            else {
+                GLib.mkdir_with_parents(GLib.path_get_dirname(path), 0o755);
+            }
+            file.replace_contents(new TextEncoder().encode(LAUNCHER), null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
         }
-        else {
-            GLib.mkdir_with_parents(GLib.path_get_dirname(path), 0o755);
+        catch (error) {
+            console.error(`[Liquid Glass] Could not write the Vitals dock launcher ${path}: ${error}`);
         }
-        file.replace_contents(new TextEncoder().encode(LAUNCHER), null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
     }
     pin() {
         if (!this.waitingForApp || !this.settings.get_boolean('dock-stats-widget'))
@@ -192,6 +195,8 @@ export class DockStatsWidget {
             destroyId: icon.connect('destroy', () => this.icons.delete(icon)) });
     }
     tick() {
+        if (this.icons.size === 0)
+            return;
         this.refreshSource();
         const vitals = Main.panel.statusArea.vitalsMenu;
         const interval = vitals?._settings?.get_int('update-time') ?? 5;
@@ -215,8 +220,12 @@ export class DockStatsWidget {
         this.values = null;
         this.history = new StatsHistory();
         for (const [box, ids] of this.boxes)
-            for (const id of ids)
-                box.disconnect(id);
+            for (const id of ids) {
+                try {
+                    box.disconnect(id);
+                }
+                catch { }
+            }
         this.boxes.clear();
         for (const icon of this.icons.keys())
             this.releaseIcon(icon);
@@ -224,11 +233,14 @@ export class DockStatsWidget {
     releaseIcon(icon) {
         const original = this.icons.get(icon);
         this.icons.delete(icon);
-        icon.disconnect(original.destroyId);
-        if (original.gicon)
-            icon.gicon = original.gicon;
-        else
-            icon.icon_name = original.name;
+        try {
+            icon.disconnect(original.destroyId);
+            if (original.gicon)
+                icon.gicon = original.gicon;
+            else
+                icon.icon_name = original.name;
+        }
+        catch { }
     }
     cleanup() {
         this.stop();

@@ -40,6 +40,10 @@ const effectsSnapshot = () => JSON.stringify(schema.list_keys().sort().filter(ke
 const beforeMode = effectsSnapshot();
 find('Settings view').selected = 1;
 if (effectsSnapshot() !== beforeMode) throw Error('Switching mode changed effect values');
+const groupTitles = [...walk(window)].filter(widget => widget instanceof Adw.PreferencesGroup && widget.visible).map(widget => widget.title);
+for (const [first, later] of [['Individual effects', 'Application windows'], ['Individual effects', 'Dock widget'], ['Shadows', 'Compatibility'], ['Shadows', 'Troubleshooting']]) {
+  if (groupTitles.lastIndexOf(first) > groupTitles.indexOf(later)) throw Error(`${first} is below ${later}: ${groupTitles.join(' | ')}`);
+}
 const surface = [...walk(window)].find(row => row instanceof Adw.ComboRow && row.title === 'Surface');
 for (let i = 0; i < 8; i++) surface.selected = i;
 surface.selected = 1;

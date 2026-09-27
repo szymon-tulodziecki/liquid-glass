@@ -5,6 +5,21 @@ import {sharedKeys, TEXT_KEYS, MENU_KEYS, POPUP_KEYS, MOTION, QUALITY, booleanCh
 import {buildAdvancedPreferences} from './advanced.js';
 import {addStatsWidget} from './stats-widget.js';
 
+function collectGroups(page, build) {
+  const added = [];
+  const add = page.add;
+  page.add = group => { added.push(group); add.call(page, group); };
+  try { build(); } finally { delete page.add; }
+  return added;
+}
+
+function moveToEnd(page, groups) {
+  for (const group of groups) {
+    page.remove(group);
+    page.add(group);
+  }
+}
+
 export function buildPreferences(window, settings) {
   window.set_default_size(720, 720);
   window.search_enabled = true;
@@ -52,22 +67,31 @@ export function buildPreferences(window, settings) {
   ]);
   controls.number(rendering, 'Edge shading', ['glass-ao-intensity'], 0, 1, 0.05);
 
-  const showAdvanced = buildAdvancedPreferences({appearance, effects, rendering: advanced}, controls);
-  new WindowRules(settings, controls).add(effects);
-  addStatsWidget(effects, controls);
+  const effectsTail = collectGroups(effects, () => {
+    new WindowRules(settings, controls).add(effects);
+    addStatsWidget(effects, controls);
+  });
 
-  const compatibility = controls.group(advanced, 'Compatibility');
-  controls.choice(compatibility, 'Quick settings glass', [
-    {title: 'Whole menu', patch: {'quick-settings-apply-to': 0}},
-    {title: 'Individual buttons', patch: {'quick-settings-apply-to': 1}},
-  ]);
-  const diagnostics = controls.group(advanced, 'Troubleshooting');
-  controls.toggle(diagnostics, 'Logging', 'output-logs');
-  controls.toggle(diagnostics, 'Render diagnostics', 'glass-debug-diagnostics', 'Adds rendering overhead; leave off for normal use.');
+  const renderingTail = collectGroups(advanced, () => {
+    const compatibility = controls.group(advanced, 'Compatibility');
+    controls.choice(compatibility, 'Quick settings glass', [
+      {title: 'Whole menu', patch: {'quick-settings-apply-to': 0}},
+      {title: 'Individual buttons', patch: {'quick-settings-apply-to': 1}},
+    ]);
+    const diagnostics = controls.group(advanced, 'Troubleshooting');
+    controls.toggle(diagnostics, 'Logging', 'output-logs');
+    controls.toggle(diagnostics, 'Render diagnostics', 'glass-debug-diagnostics', 'Adds rendering overhead; leave off for normal use.');
+  });
+  let showAdvanced;
   controls.watch(['preferences-advanced'], () => {
     const enabled = settings.get_boolean('preferences-advanced');
     for (const group of [glass, behavior, surfaces, rendering]) group.visible = !enabled;
-    showAdvanced(enabled);
+    if (enabled && !showAdvanced) {
+      showAdvanced = buildAdvancedPreferences({appearance, effects, rendering: advanced}, controls);
+      moveToEnd(effects, effectsTail);
+      moveToEnd(advanced, renderingTail);
+    }
+    showAdvanced?.(enabled);
   });
   return controls;
 }

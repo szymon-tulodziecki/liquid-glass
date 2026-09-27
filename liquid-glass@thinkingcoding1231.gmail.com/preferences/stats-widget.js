@@ -5,9 +5,10 @@ import GLib from 'gi://GLib';
 const UUID = 'Vitals@CoreCoding.com';
 
 function call(method, cancellable) {
+  const timeout = method === 'InstallRemoteExtension' ? GLib.MAXINT32 : -1;
   return new Promise((resolve, reject) => {
     Gio.DBus.session.call('org.gnome.Shell', '/org/gnome/Shell', 'org.gnome.Shell.Extensions', method,
-      new GLib.Variant('(s)', [UUID]), null, Gio.DBusCallFlags.NONE, GLib.MAXINT32, cancellable, (connection, result) => {
+      new GLib.Variant('(s)', [UUID]), null, Gio.DBusCallFlags.NONE, timeout, cancellable, (connection, result) => {
         try { resolve(connection.call_finish(result).deep_unpack()[0]); }
         catch (error) { reject(error); }
       });
