@@ -18,7 +18,6 @@ import { isActorValid } from './actors/lifecycle.js';
 import { startLaterLoop, stopLaterLoop } from './animation/frameLoops.js';
 import { excludeOtherGlass } from './capture/glassExclusions.js';
 import { placeScreenGlass, resolveGlassOrigin, applyGlassScale, GLASS_SHADOW_MAX_RADIUS } from './actors/glassBounds.js';
-import { setClipIfChanged } from './actors/writes.js';
 import { syncGlassCaptureClip } from './capture/clip.js';
 import { resolveCrossFade, adaptiveColorTweener } from './animation/colors.js';
 
