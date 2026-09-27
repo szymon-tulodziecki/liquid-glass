@@ -32,7 +32,11 @@ icon names). Disabling releases timers, pending idles, signal subscriptions and 
 Vitals wrapper, and restores the original dock icons.
 
 The feature creates one launcher, `liquid-glass-vitals-widget.desktop`, in the user's
-applications directory. It never overwrites an existing launcher. Switching the
+applications directory, and rewrites it only when its contents differ from the expected
+launcher. The launcher cannot use `NoDisplay=true`: GNOME Shell filters favorites through
+`ParentalControlsManager.shouldShowApp()`, which starts with `appInfo.should_show()`, so a
+hidden launcher is silently dropped from the dock. The same check drives the app grid,
+so the launcher also appears there. Switching the
 widget off unpins only that launcher and remembers its previous position. Disabling
 Liquid Glass itself keeps the favorite as a plain Vitals settings shortcut, preserving
 order across logout/re-enable. The small launcher remains available for reuse.

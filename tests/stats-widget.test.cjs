@@ -47,7 +47,7 @@ test('history bounds memory, rejects invalid numbers and shows gaps for stale da
   assert.doesNotMatch(history.svg(), /NaN|Infinity|undefined/);
 });
 
-function fixture(enabled = true) {
+function fixture(enabled = true, existing = null) {
   let serial = 0;
   const timers = new Map(), idles = new Map();
   class Actor {
@@ -71,13 +71,18 @@ function fixture(enabled = true) {
   const extensionManager = new Actor();
   const statusArea = {vitalsMenu: {_values: source, _settings: {get_int: () => 5}}};
   let encoded = 0;
+  let launcher = existing, writes = 0;
   const {DockStatsWidget} = loadModule(path.join(root, 'dockWidget.js'), {
     GLib: {build_filenamev: xs => xs.join('/'), get_user_data_dir: () => '/fake',
+      path_get_dirname: () => '/fake/applications', mkdir_with_parents() {},
       timeout_add_seconds(_, seconds, fn) { assert.equal(seconds, 1); const id = ++serial; timers.set(id, fn); return id; },
       idle_add(_, fn) { const id = ++serial; idles.set(id, fn); return id; },
       source_remove(id) { timers.delete(id); idles.delete(id); },
       get_monotonic_time: () => 1000000, Bytes: class { constructor(bytes) { this.bytes = bytes; } }},
-    Gio: {File: {new_for_path: () => ({query_exists: () => true})}, BytesIcon: {new: bytes => { encoded++; return bytes; }}},
+    Gio: {FileCreateFlags: {REPLACE_DESTINATION: 1}, File: {new_for_path: () => ({query_exists: () => launcher !== null,
+      load_contents: () => [true, new TextEncoder().encode(launcher)],
+      replace_contents(bytes) { writes++; launcher = new TextDecoder().decode(bytes); }})},
+      BytesIcon: {new: bytes => { encoded++; return bytes; }}},
     Shell: {AppSystem: {get_default: () => apps}}, Main: {extensionManager, panel: {statusArea}},
     AppFavorites: {getAppFavorites: () => favorites},
   });
@@ -96,8 +101,25 @@ function fixture(enabled = true) {
   manager.syncDocks([dock]);
   const flush = () => { for (const [id, fn] of [...idles]) { idles.delete(id); fn(); } };
   return {manager, settings, favorites, source, originalSource, timers, idles, entry, addIcon, dock, box, apps,
-    statusArea, extensionManager, encoded: () => encoded, flush, Actor};
+    statusArea, extensionManager, encoded: () => encoded, launcher: () => launcher, writes: () => writes, flush, Actor};
 }
+
+test('generated launcher is eligible for GNOME favorites rather than hidden by NoDisplay', () => {
+  const f = fixture(true);
+  assert.match(f.launcher(), /Type=Application/);
+  assert.doesNotMatch(f.launcher(), /(?:NoDisplay|Hidden)=true/);
+  f.manager.cleanup();
+});
+
+test('a launcher left hidden by an earlier version is rewritten, a current one is left alone', () => {
+  const stale = fixture(true, '[Desktop Entry]\nType=Application\nNoDisplay=true\n');
+  assert.equal(stale.writes(), 1);
+  assert.doesNotMatch(stale.launcher(), /NoDisplay=true/);
+  const current = fixture(true, stale.launcher());
+  assert.equal(current.writes(), 0);
+  stale.manager.cleanup();
+  current.manager.cleanup();
+});
 
 test('disabled widget owns no timer, source hook, icon mutation or favorite', () => {
   const f = fixture(false);

@@ -7,7 +7,7 @@ import {StatsHistory} from './chart.js';
 import {observeVitals} from './vitalsBridge.js';
 
 const APP_ID = 'liquid-glass-vitals-widget.desktop';
-const LAUNCHER = '[Desktop Entry]\nType=Application\nName=Vitals — CPU / Network\nExec=gnome-extensions prefs Vitals@CoreCoding.com\nIcon=utilities-system-monitor\nNoDisplay=true\nTerminal=false\n';
+const LAUNCHER = '[Desktop Entry]\nType=Application\nName=Vitals — CPU / Network\nExec=gnome-extensions prefs Vitals@CoreCoding.com\nIcon=utilities-system-monitor\nTerminal=false\n';
 
 export class DockStatsWidget {
   private settings: Gio.Settings;
@@ -51,14 +51,7 @@ export class DockStatsWidget {
       }
       return;
     }
-    const path = GLib.build_filenamev([GLib.get_user_data_dir(), 'applications', APP_ID]);
-    const file = Gio.File.new_for_path(path);
-    if (!file.query_exists(null)) {
-      GLib.mkdir_with_parents(GLib.path_get_dirname(path), 0o755);
-      const stream = file.create(Gio.FileCreateFlags.NONE, null);
-      try { stream.write_all(new TextEncoder().encode(LAUNCHER), null); }
-      finally { stream.close(null); }
-    }
+    this.ensureLauncher();
     this.waitingForApp = true;
     this.pin();
     this.refreshSource();
@@ -67,6 +60,18 @@ export class DockStatsWidget {
       this.tick();
       return GLib.SOURCE_CONTINUE;
     });
+  }
+
+  private ensureLauncher() {
+    const path = GLib.build_filenamev([GLib.get_user_data_dir(), 'applications', APP_ID]);
+    const file = Gio.File.new_for_path(path);
+    if (file.query_exists(null)) {
+      const [, contents] = file.load_contents(null);
+      if (new TextDecoder().decode(contents) === LAUNCHER) return;
+    } else {
+      GLib.mkdir_with_parents(GLib.path_get_dirname(path), 0o755);
+    }
+    file.replace_contents(new TextEncoder().encode(LAUNCHER), null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
   }
 
   private pin() {
