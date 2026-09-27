@@ -17,6 +17,7 @@ import { resolveMonitorGeometry, getAllocatedSize } from './actors/geometry.js';
 import { isActorValid } from './actors/lifecycle.js';
 import { startLaterLoop, stopLaterLoop } from './animation/frameLoops.js';
 import { excludeOtherGlass } from './capture/glassExclusions.js';
+import { placeScreenGlass, resolveGlassOrigin, applyGlassScale, GLASS_SHADOW_MAX_RADIUS } from './actors/glassBounds.js';
 import { setClipIfChanged } from './actors/writes.js';
 import { syncGlassCaptureClip } from './capture/clip.js';
 import { resolveCrossFade, adaptiveColorTweener } from './animation/colors.js';
@@ -849,17 +850,11 @@ export class UIManager {
   }
 
   private _resolveMenuOrigin(w: number): [number, number] {
-    const [animAbsX, animAbsY] = this.animActor.get_transformed_position();
-    if (!Number.isNaN(animAbsX) && !Number.isNaN(animAbsY)) {
-      this._lastValidAnimAbsX = animAbsX;
-      this._lastValidAnimAbsY = animAbsY;
-      return [animAbsX, animAbsY];
-    }
-    if (this._lastValidAnimAbsX !== undefined && this._lastValidAnimAbsY !== undefined)
-      return [this._lastValidAnimAbsX, this._lastValidAnimAbsY];
-    const monitor = Main.layoutManager.primaryMonitor;
-    if (!monitor) return [0, 0];
-    return [(monitor.width / 2) - (w / 2) + this._menuXoffset, (Main.panel.height || 27) + this._menuYoffset];
+    return resolveGlassOrigin(this.animActor, this as any, () => {
+      const monitor = Main.layoutManager.primaryMonitor;
+      if (!monitor) return [0, 0];
+      return [(monitor.width / 2) - (w / 2) + this._menuXoffset, (Main.panel.height || 27) + this._menuYoffset];
+    });
   }
 
   private _applyGlassBounds(bgActor: Clutter.Actor, bgX: number, bgY: number, bgW: number, bgH: number,
@@ -870,30 +865,11 @@ export class UIManager {
 
     let localBgX = bgX - monitorX;
     let localBgY = bgY - monitorY;
+    placeScreenGlass(bgActor, this.liquidBox, monitorX, monitorY, screenW, screenH,
+      { x: localBgX, y: localBgY, w: bgW, h: bgH }, false);
 
-    bgActor.remove_transition('size');
-    bgActor.remove_transition('position');
-    bgActor.set_position(monitorX, monitorY);
-    bgActor.set_size(screenW, screenH);
-    bgActor.remove_transition('size');
-    bgActor.remove_transition('position');
-
-    this.liquidBox?.set_position(0, 0);
-    this.liquidBox?.set_size(screenW, screenH);
-
-    const CLIP_PADDING = 200;
-
-    setClipIfChanged(
-      bgActor,
-      localBgX - CLIP_PADDING, localBgY - CLIP_PADDING,
-      bgW + CLIP_PADDING * 2, bgH + CLIP_PADDING * 2
-    );
-
-    const SHADOW_MAX_RADIUS = CLIP_PADDING - 20;
-    this.effect?.setShadowMaxRadius(SHADOW_MAX_RADIUS);
-
+    this.effect?.setShadowMaxRadius(GLASS_SHADOW_MAX_RADIUS);
     this.effect?.setResolution(screenW, screenH);
-
     this.effect?.setGlassGeometry(localBgX, localBgY, bgW, bgH);
 
     this._lastBgW = bgW; this._lastBgH = bgH;
@@ -902,13 +878,7 @@ export class UIManager {
   }
 
   private _applyGlassScale(scaleX: number, scaleY: number) {
-    if (!this.effect) return;
-    let currentScale = Math.min(scaleX, scaleY);
-    this.effect.setCornerRadius(this._cornerRadius * currentScale);
-
-    if (typeof this.effect.setAnimationScale === 'function') {
-      this.effect.setAnimationScale(currentScale);
-    }
+    applyGlassScale(this.effect, this._cornerRadius, scaleX, scaleY);
   }
 
   private _syncCaptureLayers(monitorX: number, monitorY: number, screenW: number, screenH: number) {
