@@ -146,6 +146,8 @@ export class QuickSettingsManager {
   private _lastValidAnimAbsY: number | undefined;
   private _lastBgW: number | undefined;
   private _lastBoundsSpace: 'toggles' | 'panel' | undefined;
+  private _lastHostX: number | undefined;
+  private _lastHostY: number | undefined;
   private _lastBgH: number | undefined;
   private _lastBgX: number | undefined;
   private _lastBgY: number | undefined;
@@ -912,12 +914,14 @@ export class QuickSettingsManager {
     bgPosX: number, bgPosY: number, screenW: number, screenH: number) {
     if (this._lastBoundsSpace === 'toggles' && this._lastBgW === bgW && this._lastBgH === bgH &&
       this._lastBgX === localBgX && this._lastBgY === localBgY &&
+      this._lastHostX === bgPosX && this._lastHostY === bgPosY &&
       this._lastScreenW === screenW && this._lastScreenH === screenH) return;
     placeScreenGlass(bgActor, this.liquidBox, bgPosX, bgPosY, screenW, screenH,
       { x: localBgX, y: localBgY, w: bgW, h: bgH }, true);
     this.effect?.setResolution(screenW, screenH);
 
     this._lastBoundsSpace = 'toggles';
+    this._lastHostX = bgPosX; this._lastHostY = bgPosY;
     this._lastBgW = bgW; this._lastBgH = bgH;
     this._lastBgX = localBgX; this._lastBgY = localBgY;
     this._lastScreenW = screenW; this._lastScreenH = screenH;

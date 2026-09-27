@@ -11,7 +11,7 @@ export function addBeforeRedraw(callback: GLib.SourceFunc): number {
 
 export function removeBeforeRedraw(id: number): void {
   if (!id) return;
-  try { global.compositor?.get_laters?.().remove(id); } catch { }
+  global.compositor?.get_laters?.().remove(id);
 }
 
 export type LaterLoop = {
@@ -26,14 +26,13 @@ export function startLaterLoop(slot: IdSlot, loop: LaterLoop): boolean {
   const tick = (): boolean => {
     slot.set(0);
     if (!loop.alive()) return GLib.SOURCE_REMOVE;
-    if (!(loop.honourFreeze && isFrameSyncFrozen())) {
-      try {
-        loop.step();
-      } catch (e) {
-        reportFrameLoopError(loop.errorTag, e);
-      }
-    }
     slot.set(addBeforeRedraw(tick));
+    if (loop.honourFreeze && isFrameSyncFrozen()) return GLib.SOURCE_REMOVE;
+    try {
+      loop.step();
+    } catch (e) {
+      reportFrameLoopError(loop.errorTag, e);
+    }
     return GLib.SOURCE_REMOVE;
   };
   slot.set(addBeforeRedraw(tick));
@@ -60,8 +59,9 @@ export function startStageLoop(signal: IdSlot, first: IdSlot, tick: () => void):
 export function stopStageLoop(signal: IdSlot, first: IdSlot): void {
   const signalId = signal.get();
   signal.set(0);
-  if (signalId) {
-    try { global.stage.disconnect(signalId); } catch { }
+  try {
+    if (signalId) global.stage.disconnect(signalId);
+  } finally {
+    stopLaterLoop(first);
   }
-  stopLaterLoop(first);
 }

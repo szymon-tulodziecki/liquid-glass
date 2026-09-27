@@ -120,6 +120,8 @@ export class QuickSettingsManager {
     _lastValidAnimAbsY;
     _lastBgW;
     _lastBoundsSpace;
+    _lastHostX;
+    _lastHostY;
     _lastBgH;
     _lastBgX;
     _lastBgY;
@@ -779,11 +781,14 @@ export class QuickSettingsManager {
     _applyToggleBounds(bgActor, localBgX, localBgY, bgW, bgH, bgPosX, bgPosY, screenW, screenH) {
         if (this._lastBoundsSpace === 'toggles' && this._lastBgW === bgW && this._lastBgH === bgH &&
             this._lastBgX === localBgX && this._lastBgY === localBgY &&
+            this._lastHostX === bgPosX && this._lastHostY === bgPosY &&
             this._lastScreenW === screenW && this._lastScreenH === screenH)
             return;
         placeScreenGlass(bgActor, this.liquidBox, bgPosX, bgPosY, screenW, screenH, { x: localBgX, y: localBgY, w: bgW, h: bgH }, true);
         this.effect?.setResolution(screenW, screenH);
         this._lastBoundsSpace = 'toggles';
+        this._lastHostX = bgPosX;
+        this._lastHostY = bgPosY;
         this._lastBgW = bgW;
         this._lastBgH = bgH;
         this._lastBgX = localBgX;

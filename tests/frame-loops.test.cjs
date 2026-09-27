@@ -54,7 +54,7 @@ test('only loops that honour the freeze pause while frame sync is frozen, and st
   assert.equal(f.pending.size, 0);
 });
 
-test('a stage loop runs once immediately and on every before-update, and stops both sources', () => {
+test('a stage loop runs once immediately and on every before-update, and stop disconnects both sources', () => {
   const f = fixture();
   const signal = f.slot(), first = f.slot();
   let ticks = 0;
@@ -63,10 +63,31 @@ test('a stage loop runs once immediately and on every before-update, and stops b
   f.run();
   for (const h of f.handlers.values()) h.fn();
   assert.equal(ticks, 2);
-  f.loops.startStageLoop(f.slot(), first, () => {});
+  f.loops.startStageLoop(signal, first, () => {});
   f.loops.stopStageLoop(signal, first);
+  assert.equal(f.handlers.size, 0, 'the before-update handler is disconnected');
+  assert.equal(f.pending.size, 0);
   assert.equal(signal.get(), 0);
   assert.equal(first.get(), 0);
+});
+
+test('stopping or restarting a later loop from inside its own step is honoured', () => {
+  const f = fixture();
+  const id = f.slot();
+  let steps = 0;
+  const loop = { alive: () => true, errorTag: 't', step: () => { steps++; f.loops.stopLaterLoop(id); } };
+  f.loops.startLaterLoop(id, loop);
+  f.run();
+  assert.equal(f.pending.size, 0, 'a stop from inside the step cancels the next frame');
+  f.run();
+  assert.equal(steps, 1);
+  const again = f.slot();
+  let runs = 0;
+  const restarting = { alive: () => true, errorTag: 't', step: () => { runs++; f.loops.startLaterLoop(again, restarting); } };
+  f.loops.startLaterLoop(again, restarting);
+  for (let i = 0; i < 3; i++) f.run();
+  assert.equal(runs, 3, 'a start from inside the step does not add a second loop');
+  assert.equal(f.pending.size, 1);
 });
 
 test('other glass backgrounds are excluded, the own one and plain actors are not', () => {

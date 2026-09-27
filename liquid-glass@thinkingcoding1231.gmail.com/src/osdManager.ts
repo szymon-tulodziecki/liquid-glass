@@ -281,12 +281,6 @@ export class OsdManager {
   }
 
   private _excludeOtherGlass(state: OsdState): void {
-    if (!state._uiSampler) return;
-    for (let other of this._osdStates) {
-      if (other !== state && other.bgActor) {
-        state._uiSampler.addExclusion(other.bgActor);
-      }
-    }
     excludeOtherGlass(state._uiSampler, state.bgActor);
   }
 

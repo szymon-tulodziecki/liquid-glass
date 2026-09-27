@@ -8,10 +8,7 @@ export function addBeforeRedraw(callback) {
 export function removeBeforeRedraw(id) {
     if (!id)
         return;
-    try {
-        global.compositor?.get_laters?.().remove(id);
-    }
-    catch { }
+    global.compositor?.get_laters?.().remove(id);
 }
 export function startLaterLoop(slot, loop) {
     if (slot.get() !== 0)
@@ -20,15 +17,15 @@ export function startLaterLoop(slot, loop) {
         slot.set(0);
         if (!loop.alive())
             return GLib.SOURCE_REMOVE;
-        if (!(loop.honourFreeze && isFrameSyncFrozen())) {
-            try {
-                loop.step();
-            }
-            catch (e) {
-                reportFrameLoopError(loop.errorTag, e);
-            }
-        }
         slot.set(addBeforeRedraw(tick));
+        if (loop.honourFreeze && isFrameSyncFrozen())
+            return GLib.SOURCE_REMOVE;
+        try {
+            loop.step();
+        }
+        catch (e) {
+            reportFrameLoopError(loop.errorTag, e);
+        }
         return GLib.SOURCE_REMOVE;
     };
     slot.set(addBeforeRedraw(tick));
@@ -53,11 +50,11 @@ export function startStageLoop(signal, first, tick) {
 export function stopStageLoop(signal, first) {
     const signalId = signal.get();
     signal.set(0);
-    if (signalId) {
-        try {
+    try {
+        if (signalId)
             global.stage.disconnect(signalId);
-        }
-        catch { }
     }
-    stopLaterLoop(first);
+    finally {
+        stopLaterLoop(first);
+    }
 }
