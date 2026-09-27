@@ -87,7 +87,7 @@ function fixture(overrides = {}, vitalsResponses = []) {
 test('preferences expose three pages and seven shared appearance controls', () => {
   const f = fixture();
   assert.deepEqual(f.window.children.map(page => page.title), ['Appearance', 'Effects', 'Rendering']);
-  assert.equal(f.window.children[0].children.filter(group => group.title !== 'Settings').flatMap(group => group.children).length, 7);
+  assert.equal(f.window.children[0].children.filter(group => group.title !== 'Settings' && group.visible !== false).flatMap(group => group.children).length, 7);
   assert.equal(f.widgets.filter(widget => /Spring|Sample Interval|X Offset|Y Offset/.test(widget.title ?? '')).length, 0);
   assert.equal(f.window.search_enabled, true);
 });
@@ -243,4 +243,15 @@ test('closing preferences cancels dependency setup without late settings writes'
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.values.get('dock-stats-widget'), false);
   assert.equal(f.writes.length, 0);
+});
+
+test('advanced groups sit above the always-visible groups on each page', () => {
+  const f = fixture({'preferences-advanced': true});
+  const titles = name => f.window.children.find(page => page.title === name).children
+    .filter(group => group.visible !== false).map(group => group.title);
+  const effects = titles('Effects'), rendering = titles('Rendering');
+  assert.ok(effects.indexOf('Individual effects') < effects.indexOf('Application windows'), effects.join(' | '));
+  assert.ok(effects.indexOf('Individual effects') < effects.indexOf('Dock widget'), effects.join(' | '));
+  assert.ok(rendering.indexOf('Blur') < rendering.indexOf('Compatibility'), rendering.join(' | '));
+  assert.ok(rendering.indexOf('Shadows') < rendering.indexOf('Troubleshooting'), rendering.join(' | '));
 });

@@ -16,6 +16,8 @@ export function buildPreferences(window, settings) {
   };
 
   const appearance = page('Appearance', 'preferences-desktop-appearance-symbolic');
+  const effects = page('Effects', 'preferences-other-symbolic');
+  const advanced = page('Rendering', 'applications-engineering-symbolic');
   const view = controls.group(appearance, 'Settings');
   controls.choice(view, 'Settings view', [
     {title: 'Simple', patch: {'preferences-advanced': false}},
@@ -34,15 +36,11 @@ export function buildPreferences(window, settings) {
     'menu-match-quick-settings-height', 'panel-menu-match-quick-settings-height',
   ]));
 
-  const effects = page('Effects', 'preferences-other-symbolic');
   const surfaces = controls.group(effects, 'Show glass on');
   controls.toggle(surfaces, 'Dock', 'enable-dock-glass');
   controls.choice(surfaces, 'Menus', booleanChoices(MENU_KEYS), 'Calendar, quick settings, top bar and desktop');
   controls.choice(surfaces, 'Popups', booleanChoices(POPUP_KEYS), 'Notifications and volume / brightness indicators');
-  new WindowRules(settings, controls).add(effects);
-  addStatsWidget(effects, controls);
 
-  const advanced = page('Rendering', 'applications-engineering-symbolic');
   const rendering = controls.group(advanced, 'Rendering');
   controls.choice(rendering, 'Quality', QUALITY);
   controls.number(rendering, 'Refraction', ['glass-displacement-scale'], 0, 200, 1);
@@ -54,6 +52,10 @@ export function buildPreferences(window, settings) {
   ]);
   controls.number(rendering, 'Edge shading', ['glass-ao-intensity'], 0, 1, 0.05);
 
+  const showAdvanced = buildAdvancedPreferences({appearance, effects, rendering: advanced}, controls);
+  new WindowRules(settings, controls).add(effects);
+  addStatsWidget(effects, controls);
+
   const compatibility = controls.group(advanced, 'Compatibility');
   controls.choice(compatibility, 'Quick settings glass', [
     {title: 'Whole menu', patch: {'quick-settings-apply-to': 0}},
@@ -62,13 +64,10 @@ export function buildPreferences(window, settings) {
   const diagnostics = controls.group(advanced, 'Troubleshooting');
   controls.toggle(diagnostics, 'Logging', 'output-logs');
   controls.toggle(diagnostics, 'Render diagnostics', 'glass-debug-diagnostics', 'Adds rendering overhead; leave off for normal use.');
-  let showAdvanced;
   controls.watch(['preferences-advanced'], () => {
     const enabled = settings.get_boolean('preferences-advanced');
     for (const group of [glass, behavior, surfaces, rendering]) group.visible = !enabled;
-    if (enabled && !showAdvanced)
-      showAdvanced = buildAdvancedPreferences({appearance, effects, rendering: advanced}, controls);
-    showAdvanced?.(enabled);
+    showAdvanced(enabled);
   });
   return controls;
 }
