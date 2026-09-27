@@ -10,6 +10,7 @@ The extension source is in `liquid-glass@thinkingcoding1231.gmail.com/src`.
 | `animation/` | Shared spring models, colour interpolation and frame-sync switches |
 | `rendering/` | Blur buffers, pipelines, crop targets, glass extents, uniform caching and material settings |
 | `diagnostics/` | Logging, the opt-in ring recorder and Looking Glass controls |
+| `stats/` | Optional dock widget, bounded graph history and the Vitals adapter; see [Dock widget](dock-widget.md) |
 | `quickSettings/toggleStyles.ts` | Toggle discovery, native theme colours, temporary styles and their timer/signal lifetime |
 | `preferences/` | Shared appearance controls, grouped settings writes and application selection; see [Preferences](preferences.md) |
 | `liquidEffect.ts` | Clutter effect lifecycle, frame reuse and the existing interface used by managers |
