@@ -2,7 +2,6 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import * as AppFavorites from 'resource:///org/gnome/shell/ui/appFavorites.js';
 import { StatsHistory } from './chart.js';
 import { observeVitals } from './vitalsBridge.js';
 const APP_ID = 'liquid-glass-vitals-widget.desktop';
@@ -19,6 +18,8 @@ export class DockStatsWidget {
     timer = 0;
     idle = 0;
     waitingForApp = false;
+    pinned = false;
+    dockDestroyIds = new Map();
     constructor(settings) { this.settings = settings; }
     setup() {
         this.signals.push([this.settings, this.settings.connect('changed::dock-stats-widget', () => this.refresh())]);
@@ -28,21 +29,54 @@ export class DockStatsWidget {
             })]);
         const apps = Shell.AppSystem.get_default();
         this.signals.push([apps, apps.connect('installed-changed', () => { this.pin(); return false; })]);
+        this.pinned = this.favorites().includes(APP_ID);
+        this.signals.push([global.settings, global.settings.connect('changed::favorite-apps', () => this.followFavorites())]);
         this.refresh();
     }
     syncDocks(docks) {
+        for (const [dock, id] of this.dockDestroyIds) {
+            if (docks.includes(dock))
+                continue;
+            try {
+                dock.disconnect(id);
+            }
+            catch { }
+            this.dockDestroyIds.delete(dock);
+        }
+        for (const dock of docks) {
+            if (this.dockDestroyIds.has(dock))
+                continue;
+            this.dockDestroyIds.set(dock, dock.connect('destroy', () => {
+                this.dockDestroyIds.delete(dock);
+                this.docks = this.docks.filter(item => item !== dock);
+            }));
+        }
         this.docks = docks;
         this.rescan();
+    }
+    favorites() {
+        return global.settings.get_strv('favorite-apps');
+    }
+    followFavorites() {
+        const pinned = this.favorites().includes(APP_ID);
+        const wasPinned = this.pinned;
+        this.pinned = pinned;
+        if (pinned === wasPinned || pinned === this.settings.get_boolean('dock-stats-widget'))
+            return;
+        this.settings.set_boolean('dock-stats-widget', pinned);
     }
     refresh() {
         if (!this.settings.get_boolean('dock-stats-widget')) {
             this.stop();
-            const favorites = AppFavorites.getAppFavorites();
-            const index = favorites.getFavorites().findIndex(app => app.get_id() === APP_ID);
+            const favorites = this.favorites();
+            const index = favorites.indexOf(APP_ID);
             if (index >= 0) {
                 this.settings.set_int('dock-stats-position', index);
-                favorites.removeFavorite(APP_ID);
+                favorites.splice(index, 1);
+                this.pinned = false;
+                global.settings.set_strv('favorite-apps', favorites);
             }
+            this.removeLauncher();
             return;
         }
         this.ensureLauncher();
@@ -56,8 +90,17 @@ export class DockStatsWidget {
                 return GLib.SOURCE_CONTINUE;
             });
     }
+    launcherPath() {
+        return GLib.build_filenamev([GLib.get_user_data_dir(), 'applications', APP_ID]);
+    }
+    removeLauncher() {
+        try {
+            Gio.File.new_for_path(this.launcherPath()).delete(null);
+        }
+        catch { }
+    }
     ensureLauncher() {
-        const path = GLib.build_filenamev([GLib.get_user_data_dir(), 'applications', APP_ID]);
+        const path = this.launcherPath();
         const file = Gio.File.new_for_path(path);
         if (file.query_exists(null)) {
             const [, contents] = file.load_contents(null);
@@ -75,9 +118,13 @@ export class DockStatsWidget {
         if (!Shell.AppSystem.get_default().lookup_app(APP_ID))
             return;
         this.waitingForApp = false;
-        const favorites = AppFavorites.getAppFavorites();
-        if (!favorites.isFavorite(APP_ID))
-            favorites.addFavoriteAtPos(APP_ID, this.settings.get_int('dock-stats-position'));
+        const favorites = this.favorites();
+        if (favorites.includes(APP_ID))
+            return;
+        const position = this.settings.get_int('dock-stats-position');
+        favorites.splice(position < 0 || position > favorites.length ? favorites.length : position, 0, APP_ID);
+        this.pinned = true;
+        global.settings.set_strv('favorite-apps', favorites);
     }
     refreshSource() {
         const next = this.settings.get_boolean('dock-stats-widget') ? Main.panel.statusArea.vitalsMenu?._values : null;
@@ -145,12 +192,12 @@ export class DockStatsWidget {
             destroyId: icon.connect('destroy', () => this.icons.delete(icon)) });
     }
     tick() {
-        if (![...this.icons.keys()].some(icon => icon.mapped))
-            return;
         this.refreshSource();
         const vitals = Main.panel.statusArea.vitalsMenu;
         const interval = vitals?._settings?.get_int('update-time') ?? 5;
         this.history.sample(GLib.get_monotonic_time() / 1e6, Math.max(5, interval * 3));
+        if (![...this.icons.keys()].some(icon => icon.mapped))
+            return;
         const icon = Gio.BytesIcon.new(new GLib.Bytes(new TextEncoder().encode(this.history.svg())));
         for (const target of this.icons.keys())
             if (target.mapped)
@@ -184,9 +231,20 @@ export class DockStatsWidget {
             icon.icon_name = original.name;
     }
     cleanup() {
-        for (const [object, id] of this.signals.splice(0))
-            object.disconnect(id);
         this.stop();
+        for (const [object, id] of this.signals.splice(0)) {
+            try {
+                object.disconnect(id);
+            }
+            catch { }
+        }
+        for (const [dock, id] of this.dockDestroyIds) {
+            try {
+                dock.disconnect(id);
+            }
+            catch { }
+        }
+        this.dockDestroyIds.clear();
         this.docks = [];
     }
 }

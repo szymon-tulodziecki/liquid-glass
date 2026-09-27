@@ -37,7 +37,10 @@ launcher. The launcher cannot use `NoDisplay=true`: GNOME Shell filters favorite
 `ParentalControlsManager.shouldShowApp()`, which starts with `appInfo.should_show()`, so a
 hidden launcher is silently dropped from the dock. The same check drives the app grid,
 so the launcher also appears there. Switching the
-widget off unpins only that launcher and remembers its previous position. Disabling
+widget off unpins only that launcher, remembers its previous position and deletes the
+launcher. Pinning and unpinning edit the raw `favorite-apps` list, so favorites whose
+launcher is temporarily missing are kept. Unpinning the icon from the dock switches the
+widget off, and undoing that switches it back on, so the setting and the dock agree. Disabling
 Liquid Glass itself keeps the favorite as a plain Vitals settings shortcut, preserving
 order across logout/re-enable. The small launcher remains available for reuse.
 

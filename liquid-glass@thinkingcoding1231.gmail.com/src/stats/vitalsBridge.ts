@@ -1,6 +1,7 @@
 export function observeVitals(values: any, receive: (type: string, value: number) => void) {
   if (typeof values?.returnIfDifferent !== 'function') return null;
   const original = values.returnIfDifferent;
+  const hadOwn = Object.prototype.hasOwnProperty.call(values, 'returnIfDifferent');
   let listener: typeof receive | null = receive;
   const wrapped = function (this: any, ...args: any[]) {
     const result = original.apply(this, args);
@@ -22,6 +23,8 @@ export function observeVitals(values: any, receive: (type: string, value: number
   values.returnIfDifferent = wrapped;
   return () => {
     listener = null;
-    if (values.returnIfDifferent === wrapped) values.returnIfDifferent = original;
+    if (values.returnIfDifferent !== wrapped) return;
+    if (hadOwn) values.returnIfDifferent = original;
+    else delete values.returnIfDifferent;
   };
 }

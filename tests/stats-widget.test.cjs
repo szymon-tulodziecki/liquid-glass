@@ -61,10 +61,12 @@ function fixture(enabled = true, existing = null) {
   }
   const settings = Object.assign(new Actor(), {enabled, position: -1,
     get_boolean() { return this.enabled; }, get_int() { return this.position; },
-    set_int(_, value) { this.position = value; }});
-  const favorites = {ids: ['first.desktop'], getFavorites() { return this.ids.map(id => ({get_id: () => id})); },
-    isFavorite(id) { return this.ids.includes(id); }, addFavoriteAtPos(id, pos) { this.ids.splice(pos < 0 ? this.ids.length : pos, 0, id); },
-    removeFavorite(id) { this.ids = this.ids.filter(item => item !== id); }};
+    set_int(_, value) { this.position = value; },
+    set_boolean(_, value) { this.enabled = value; this.emit('changed::dock-stats-widget'); }});
+  const favorites = Object.assign(new Actor(), {ids: ['first.desktop'],
+    get_strv(key) { assert.equal(key, 'favorite-apps'); return [...this.ids]; },
+    set_strv(key, ids) { assert.equal(key, 'favorite-apps'); this.ids = [...ids]; this.emit('changed::favorite-apps'); },
+    removeFavorite(id) { this.set_strv('favorite-apps', this.ids.filter(item => item !== id)); }});
   const apps = Object.assign(new Actor(), {lookup_app: () => ({})});
   const source = {returnIfDifferent() { return []; }};
   const originalSource = source.returnIfDifferent;
@@ -81,10 +83,11 @@ function fixture(enabled = true, existing = null) {
       get_monotonic_time: () => 1000000, Bytes: class { constructor(bytes) { this.bytes = bytes; } }},
     Gio: {FileCreateFlags: {REPLACE_DESTINATION: 1}, File: {new_for_path: () => ({query_exists: () => launcher !== null,
       load_contents: () => [true, new TextEncoder().encode(launcher)],
+      delete() { launcher = null; },
       replace_contents(bytes) { writes++; launcher = new TextDecoder().decode(bytes); }})},
       BytesIcon: {new: bytes => { encoded++; return bytes; }}},
     Shell: {AppSystem: {get_default: () => apps}}, Main: {extensionManager, panel: {statusArea}},
-    AppFavorites: {getAppFavorites: () => favorites},
+    global: {settings: favorites},
   });
   const manager = new DockStatsWidget(settings);
   const dock = new Actor(), box = new Actor();
@@ -164,11 +167,46 @@ test('hidden docks do not render graphs, and disabling remembers the favorite po
   f.manager.cleanup();
 });
 
-test('app installation events do not repin a widget manually removed from favorites', () => {
+test('unpinning from the dock turns the widget off, so a later enable does not repin it', () => {
   const f = fixture();
   f.favorites.removeFavorite('liquid-glass-vitals-widget.desktop');
+  assert.equal(f.settings.enabled, false);
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.launcher(), null, 'the launcher is removed with the widget');
   f.apps.emit('installed-changed');
+  f.manager.cleanup();
+  const again = fixture(false);
+  again.manager.cleanup();
   assert.deepEqual(f.favorites.ids, ['first.desktop']);
+});
+
+test('undoing an unpin turns the widget back on', () => {
+  const f = fixture();
+  f.favorites.removeFavorite('liquid-glass-vitals-widget.desktop');
+  f.favorites.set_strv('favorite-apps', [...f.favorites.ids, 'liquid-glass-vitals-widget.desktop']);
+  assert.equal(f.settings.enabled, true);
+  assert.equal(f.timers.size, 1);
+  f.manager.cleanup();
+});
+
+test('pinning keeps favorites whose launcher is currently missing', () => {
+  const f = fixture(false);
+  f.favorites.ids = ['first.desktop', 'not-installed-yet.desktop'];
+  f.settings.enabled = true; f.settings.emit('changed::dock-stats-widget');
+  assert.deepEqual(f.favorites.ids, ['first.desktop', 'not-installed-yet.desktop', 'liquid-glass-vitals-widget.desktop']);
+  f.manager.cleanup();
+});
+
+test('hidden docks keep sampling so the history shows the gap, and a destroyed dock is forgotten', () => {
+  const f = fixture();
+  f.entry.icon.mapped = false;
+  for (let i = 0; i < 3; i++) for (const tick of f.timers.values()) tick();
+  assert.equal(f.encoded(), 0);
+  f.dock.emit('destroy');
+  f.box.emit('child-removed');
+  f.dock.get_children = () => { throw new Error('disposed'); };
+  f.flush();
+  assert.equal(f.manager.docks.includes(f.dock), false);
   f.manager.cleanup();
 });
 
@@ -191,4 +229,15 @@ test('recreated icons and a restarted Vitals reconnect without accumulating hook
   f.manager.cleanup();
   assert.equal(icon.gicon, 'new-original');
   assert.equal(source.returnIfDifferent, original);
+});
+
+test('detaching from a prototype method leaves no own property behind', () => {
+  class Values { returnIfDifferent() { return 'proto'; } }
+  const values = new Values();
+  const detach = observeVitals(values, () => {});
+  assert.equal(Object.hasOwn(values, 'returnIfDifferent'), true);
+  detach();
+  assert.equal(Object.hasOwn(values, 'returnIfDifferent'), false);
+  Values.prototype.returnIfDifferent = () => 'patched';
+  assert.equal(values.returnIfDifferent(), 'patched');
 });
