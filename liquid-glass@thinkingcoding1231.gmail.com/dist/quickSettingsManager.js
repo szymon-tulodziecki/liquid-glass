@@ -119,6 +119,7 @@ export class QuickSettingsManager {
     _lastValidAnimAbsX;
     _lastValidAnimAbsY;
     _lastBgW;
+    _lastBoundsSpace;
     _lastBgH;
     _lastBgX;
     _lastBgY;
@@ -776,7 +777,7 @@ export class QuickSettingsManager {
         return this._takeLastRegions();
     }
     _applyToggleBounds(bgActor, localBgX, localBgY, bgW, bgH, bgPosX, bgPosY, screenW, screenH) {
-        if (this._lastBgW === bgW && this._lastBgH === bgH &&
+        if (this._lastBoundsSpace === 'toggles' && this._lastBgW === bgW && this._lastBgH === bgH &&
             this._lastBgX === localBgX && this._lastBgY === localBgY &&
             this._lastScreenW === screenW && this._lastScreenH === screenH)
             return;
@@ -792,6 +793,7 @@ export class QuickSettingsManager {
         this.liquidBox?.remove_clip();
         setClipIfChanged(bgActor, localBgX - CLIP_PADDING, localBgY - CLIP_PADDING, bgW + CLIP_PADDING * 2, bgH + CLIP_PADDING * 2);
         this.effect?.setResolution(screenW, screenH);
+        this._lastBoundsSpace = 'toggles';
         this._lastBgW = bgW;
         this._lastBgH = bgH;
         this._lastBgX = localBgX;
@@ -902,7 +904,7 @@ export class QuickSettingsManager {
         return [(monitor.width / 2) - (w / 2), (Main.panel.height || 27) + (this._menuYoffset ?? 0)];
     }
     _applyPanelBounds(bgActor, bgX, bgY, bgW, bgH, monitorX, monitorY, screenW, screenH) {
-        if (this._lastBgW === bgW && this._lastBgH === bgH &&
+        if (this._lastBoundsSpace === 'panel' && this._lastBgW === bgW && this._lastBgH === bgH &&
             this._lastBgX === bgX && this._lastBgY === bgY &&
             this._lastScreenW === screenW && this._lastScreenH === screenH)
             return;
@@ -923,6 +925,7 @@ export class QuickSettingsManager {
         this.effect?.setShadowMaxRadius(SHADOW_MAX_RADIUS);
         this.effect?.setResolution(screenW, screenH);
         this.effect?.setGlassGeometry(localBgX, localBgY, bgW, bgH);
+        this._lastBoundsSpace = 'panel';
         this._lastBgW = bgW;
         this._lastBgH = bgH;
         this._lastBgX = bgX;
@@ -1461,6 +1464,7 @@ export class QuickSettingsManager {
         this._lastScreenW = undefined;
         this._lastScreenH = undefined;
         this._lastBgW = undefined;
+        this._lastBoundsSpace = undefined;
         this._lastBgH = undefined;
         this._lastBgX = undefined;
         this._lastBgY = undefined;
