@@ -12,11 +12,11 @@ import { StageContrastSampler, AdaptiveContrastConfig } from './contrastSampler.
 import { UnpickableActor, LayoutOpaqueActor, UnpickableStyledWidget } from './actors/unpickable.js';
 import { UILayerSampler } from './capture/uiLayerSampler.js';
 import { WindowCloneManager } from './capture/windowClones.js';
-import { reportFrameLoopError } from './diagnostics/logging.js';
 import { ensureGlassAllocated } from './actors/allocation.js';
 import { isActorValid } from './actors/lifecycle.js';
 import { resolveMonitorGeometry, getAllocatedSize, getTransformedRect } from './actors/geometry.js';
-import { isFrameSyncFrozen } from './animation/frameSync.js';
+import { startLaterLoop, stopLaterLoop } from './animation/frameLoops.js';
+import { excludeOtherGlass } from './capture/glassExclusions.js';
 import { setClipIfChanged } from './actors/writes.js';
 import { syncGlassCaptureClip } from './capture/clip.js';
 import { resolveCrossFade, adaptiveColorTweener } from './animation/colors.js';
@@ -87,6 +87,9 @@ export class QuickSettingsManager {
     _signals;
     _animSignalId = 0;
     _frameSyncId;
+    get _frameSlot() {
+        return { get: () => this._frameSyncId, set: (id) => { this._frameSyncId = id; } };
+    }
     _torndown = false;
     _glassExpand;
     _menuXoffset;
@@ -554,23 +557,10 @@ export class QuickSettingsManager {
             startFrameSync();
         }
     }
-    _laterAdd(callback) {
-        return global.compositor?.get_laters?.().add(Meta.LaterType.BEFORE_REDRAW, callback) ?? 0;
-    }
     _buildClones() {
         if (!this.bgActor)
             return;
-        if (this._uiSampler) {
-            for (let child of Main.layoutManager.uiGroup.get_children()) {
-                if (child === this.bgActor)
-                    continue;
-                let isLiquidBg = child.get_name?.() === 'liquid-glass-bg-actor' ||
-                    (typeof child.get_children === 'function' &&
-                        child.get_children().some((c) => c.get_name?.() === 'liquid-box'));
-                if (isLiquidBg)
-                    this._uiSampler.addExclusion(child);
-            }
-        }
+        excludeOtherGlass(this._uiSampler, this.bgActor);
         this._windowCloneManager?.rebuildClones();
         this._uiSampler?.rebindSelf();
         this._uiSampler?.refresh();
@@ -579,34 +569,18 @@ export class QuickSettingsManager {
         if (this._frameSyncId !== 0)
             return;
         this._buildClones();
-        const tick = () => {
-            this._frameSyncId = 0;
-            if (this._torndown)
-                return GLib.SOURCE_REMOVE;
-            if (!this.bgActor || !this.targetActor.mapped)
-                return GLib.SOURCE_REMOVE;
-            if (honourFreeze && isFrameSyncFrozen()) {
-                this._frameSyncId = this._laterAdd(tick);
-                return GLib.SOURCE_REMOVE;
-            }
-            ensureGlassAllocated(this.bgActor);
-            try {
+        startLaterLoop(this._frameSlot, {
+            alive: () => !this._torndown && !!this.bgActor && this.targetActor.mapped,
+            honourFreeze,
+            errorTag,
+            step: () => {
+                ensureGlassAllocated(this.bgActor);
                 sync();
-            }
-            catch (e) {
-                reportFrameLoopError(errorTag, e);
-            }
-            this._frameSyncId = this._laterAdd(tick);
-            return GLib.SOURCE_REMOVE;
-        };
-        this._frameSyncId = this._laterAdd(tick);
+            },
+        });
     }
     _stopFrameSync() {
-        if (this._frameSyncId === 0)
-            return;
-        if (global.compositor?.get_laters)
-            global.compositor.get_laters().remove(this._frameSyncId);
-        this._frameSyncId = 0;
+        stopLaterLoop(this._frameSlot);
     }
     _panelActorWarned = false;
     _resolvePanelActor() {
@@ -1516,11 +1490,7 @@ export class QuickSettingsManager {
             removeFrameTicker(this._tickId);
             this._tickId = 0;
         }
-        if (this._frameSyncId !== 0) {
-            if (global.compositor?.get_laters)
-                global.compositor.get_laters().remove(this._frameSyncId);
-            this._frameSyncId = 0;
-        }
+        this._stopFrameSync();
     }
     _restoreMenuActors() {
         this.targetActor.remove_style_class_name('liquid-glass-transparent');
@@ -1560,11 +1530,7 @@ export class QuickSettingsManager {
     cleanup() {
         this._torndown = true;
         this._teardownStep('frameSync', () => {
-            if (this._frameSyncId !== 0) {
-                if (global.compositor?.get_laters)
-                    global.compositor.get_laters().remove(this._frameSyncId);
-                this._frameSyncId = 0;
-            }
+            this._stopFrameSync();
         });
         this._teardownStep('settingsSignals', () => {
             for (let sigId of this._settingsSignals) {

@@ -12,11 +12,11 @@ import { StageContrastSampler, AdaptiveContrastConfig } from './contrastSampler.
 import { UnpickableActor, UnpickableWidget } from './actors/unpickable.js';
 import { UILayerSampler } from './capture/uiLayerSampler.js';
 import { WindowCloneManager } from './capture/windowClones.js';
-import { reportFrameLoopError } from './diagnostics/logging.js';
 import { ensureGlassAllocated } from './actors/allocation.js';
 import { resolveMonitorGeometry, getAllocatedSize } from './actors/geometry.js';
 import { isActorValid } from './actors/lifecycle.js';
-import { isFrameSyncFrozen } from './animation/frameSync.js';
+import { startLaterLoop, stopLaterLoop } from './animation/frameLoops.js';
+import { excludeOtherGlass } from './capture/glassExclusions.js';
 import { setClipIfChanged } from './actors/writes.js';
 import { syncGlassCaptureClip } from './capture/clip.js';
 import { resolveCrossFade, adaptiveColorTweener } from './animation/colors.js';
@@ -47,6 +47,9 @@ export class UIManager {
     _destroySignalId = 0;
     _actorDestroyed = false;
     _frameSyncId;
+    get _frameSlot() {
+        return { get: () => this._frameSyncId, set: (id) => { this._frameSyncId = id; } };
+    }
     _torndown = false;
     _glassExpand;
     _menuXoffset;
@@ -622,68 +625,21 @@ export class UIManager {
         this.effect.setBlurRadius(blurRadius);
         this.liquidBox.add_effect(this.effect);
         this.bgActor.hide();
-        const laterAdd = (laterType, callback) => {
-            return global.compositor?.get_laters?.().add(laterType, callback);
-        };
-        const laterRemove = (id) => {
-            if (!id)
+        const startFrameSync = () => {
+            if (this._frameSyncId !== 0)
                 return;
-            if (global.compositor?.get_laters)
-                global.compositor.get_laters().remove(id);
+            this._buildClones();
+            startLaterLoop(this._frameSlot, {
+                alive: () => !this._torndown && !!this.bgActor && this.targetActor.mapped,
+                honourFreeze: true,
+                errorTag: 'UIManager',
+                step: () => {
+                    ensureGlassAllocated(this.bgActor);
+                    this._syncGeometry();
+                },
+            });
         };
-        const frameLaterType = Meta.LaterType.BEFORE_REDRAW;
-        let buildClones = () => {
-            if (!this.bgActor)
-                return;
-            if (this._uiSampler) {
-                for (let child of Main.layoutManager.uiGroup.get_children()) {
-                    if (child === this.bgActor)
-                        continue;
-                    let isLiquidBg = child.name === 'liquid-glass-bg-actor' ||
-                        (typeof child.get_children === 'function' &&
-                            child.get_children().some(c => c.name === 'liquid-box'));
-                    if (isLiquidBg) {
-                        this._uiSampler.addExclusion(child);
-                    }
-                }
-            }
-            this._restackGlass();
-            this._windowCloneManager?.rebuildClones();
-            this._uiSampler?.rebindSelf();
-            this._uiSampler?.refresh();
-        };
-        let frameTick = () => {
-            this._frameSyncId = 0;
-            if (this._torndown)
-                return GLib.SOURCE_REMOVE;
-            if (!this.bgActor || !this.targetActor.mapped)
-                return GLib.SOURCE_REMOVE;
-            if (isFrameSyncFrozen()) {
-                this._frameSyncId = laterAdd(frameLaterType, frameTick);
-                return GLib.SOURCE_REMOVE;
-            }
-            ensureGlassAllocated(this.bgActor);
-            try {
-                this._syncGeometry();
-            }
-            catch (e) {
-                reportFrameLoopError('UIManager', e);
-            }
-            this._frameSyncId = laterAdd(frameLaterType, frameTick);
-            return GLib.SOURCE_REMOVE;
-        };
-        let startFrameSync = () => {
-            if (this._frameSyncId === 0) {
-                buildClones();
-                this._frameSyncId = laterAdd(frameLaterType, frameTick);
-            }
-        };
-        let stopFrameSync = () => {
-            if (this._frameSyncId !== 0) {
-                laterRemove(this._frameSyncId);
-                this._frameSyncId = 0;
-            }
-        };
+        const stopFrameSync = () => stopLaterLoop(this._frameSlot);
         this._signals.push({
             target: this.menu,
             id: this.menu.connect('open-state-changed', (menu, isOpen) => {
@@ -719,6 +675,15 @@ export class UIManager {
         if (this.targetActor.mapped) {
             startFrameSync();
         }
+    }
+    _buildClones() {
+        if (!this.bgActor)
+            return;
+        excludeOtherGlass(this._uiSampler, this.bgActor);
+        this._restackGlass();
+        this._windowCloneManager?.rebuildClones();
+        this._uiSampler?.rebindSelf();
+        this._uiSampler?.refresh();
     }
     _syncGeometry() {
         if (!this._syncBgVisibility())
@@ -1163,11 +1128,7 @@ export class UIManager {
             removeFrameTicker(this._tickId);
             this._tickId = 0;
         }
-        if (this._frameSyncId !== 0) {
-            if (global.compositor?.get_laters)
-                global.compositor.get_laters().remove(this._frameSyncId);
-            this._frameSyncId = 0;
-        }
+        stopLaterLoop(this._frameSlot);
         if (this._interfaceSettings && this._accentColorSignalId) {
             this._interfaceSettings.disconnect(this._accentColorSignalId);
             this._accentColorSignalId = 0;
@@ -1238,13 +1199,7 @@ export class UIManager {
     cleanup() {
         this._torndown = true;
         this._teardownStep('heightMeasurement', () => this._cancelHeightMeasurement());
-        this._teardownStep('frameSync', () => {
-            if (this._frameSyncId !== 0) {
-                if (global.compositor?.get_laters)
-                    global.compositor.get_laters().remove(this._frameSyncId);
-                this._frameSyncId = 0;
-            }
-        });
+        this._teardownStep('frameSync', () => stopLaterLoop(this._frameSlot));
         this._teardownStep('settingsSignals', () => {
             for (let sigId of this._settingsSignals) {
                 try {

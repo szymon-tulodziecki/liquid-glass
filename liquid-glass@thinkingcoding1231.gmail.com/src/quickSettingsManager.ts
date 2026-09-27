@@ -13,11 +13,11 @@ import Gio from 'gi://Gio';
 import { UnpickableActor, LayoutOpaqueActor, UnpickableStyledWidget } from './actors/unpickable.js';
 import { UILayerSampler } from './capture/uiLayerSampler.js';
 import { WindowCloneManager } from './capture/windowClones.js';
-import { reportFrameLoopError } from './diagnostics/logging.js';
 import { ensureGlassAllocated } from './actors/allocation.js';
 import { isActorValid } from './actors/lifecycle.js';
 import { resolveMonitorGeometry, getAllocatedSize, getTransformedRect } from './actors/geometry.js';
-import { isFrameSyncFrozen } from './animation/frameSync.js';
+import { startLaterLoop, stopLaterLoop } from './animation/frameLoops.js';
+import { excludeOtherGlass } from './capture/glassExclusions.js';
 import { setClipIfChanged } from './actors/writes.js';
 import { syncGlassCaptureClip } from './capture/clip.js';
 import { resolveCrossFade, adaptiveColorTweener } from './animation/colors.js';
@@ -109,6 +109,9 @@ export class QuickSettingsManager {
   private _signals: { target: any, id: number }[];
   private _animSignalId: number = 0;
   private _frameSyncId: number;
+  private get _frameSlot() {
+    return { get: () => this._frameSyncId, set: (id: number) => { this._frameSyncId = id; } };
+  }
   private _torndown: boolean = false;
   private _glassExpand: number;
   private _menuXoffset: number;
@@ -674,23 +677,9 @@ export class QuickSettingsManager {
     }
   }
 
-  private _laterAdd(callback: GLib.SourceFunc): number {
-    return global.compositor?.get_laters?.().add(Meta.LaterType.BEFORE_REDRAW, callback) ?? 0;
-  }
-
   private _buildClones(): void {
     if (!this.bgActor) return;
-
-    if (this._uiSampler) {
-      for (let child of Main.layoutManager.uiGroup.get_children()) {
-        if (child === this.bgActor) continue;
-        let isLiquidBg = child.get_name?.() === 'liquid-glass-bg-actor' ||
-          (typeof child.get_children === 'function' &&
-            child.get_children().some((c: Clutter.Actor) => c.get_name?.() === 'liquid-box'));
-        if (isLiquidBg) this._uiSampler!.addExclusion(child);
-      }
-    }
-
+    excludeOtherGlass(this._uiSampler, this.bgActor);
     this._windowCloneManager?.rebuildClones();
     this._uiSampler?.rebindSelf();
     this._uiSampler?.refresh();
@@ -699,30 +688,19 @@ export class QuickSettingsManager {
   private _startFrameSync(sync: () => void, errorTag: string, honourFreeze: boolean): void {
     if (this._frameSyncId !== 0) return;
     this._buildClones();
-    const tick = (): boolean => {
-      this._frameSyncId = 0;
-      if (this._torndown) return GLib.SOURCE_REMOVE;
-      if (!this.bgActor || !this.targetActor.mapped) return GLib.SOURCE_REMOVE;
-      if (honourFreeze && isFrameSyncFrozen()) {
-        this._frameSyncId = this._laterAdd(tick);
-        return GLib.SOURCE_REMOVE;
-      }
-      ensureGlassAllocated(this.bgActor);
-      try {
+    startLaterLoop(this._frameSlot, {
+      alive: () => !this._torndown && !!this.bgActor && this.targetActor.mapped,
+      honourFreeze,
+      errorTag,
+      step: () => {
+        ensureGlassAllocated(this.bgActor);
         sync();
-      } catch (e) {
-        reportFrameLoopError(errorTag, e);
-      }
-      this._frameSyncId = this._laterAdd(tick);
-      return GLib.SOURCE_REMOVE;
-    };
-    this._frameSyncId = this._laterAdd(tick);
+      },
+    });
   }
 
   private _stopFrameSync(): void {
-    if (this._frameSyncId === 0) return;
-    if (global.compositor?.get_laters) global.compositor.get_laters().remove(this._frameSyncId);
-    this._frameSyncId = 0;
+    stopLaterLoop(this._frameSlot);
   }
 
   private _panelActorWarned: boolean = false;
@@ -1697,11 +1675,7 @@ export class QuickSettingsManager {
       this._tickId = 0;
     }
 
-    if (this._frameSyncId !== 0) {
-      if (global.compositor?.get_laters)
-        global.compositor.get_laters().remove(this._frameSyncId);
-      this._frameSyncId = 0;
-    }
+    this._stopFrameSync();
   }
 
   private _restoreMenuActors(): void {
@@ -1744,11 +1718,7 @@ export class QuickSettingsManager {
     this._torndown = true;
 
     this._teardownStep('frameSync', () => {
-      if (this._frameSyncId !== 0) {
-        if (global.compositor?.get_laters)
-          global.compositor.get_laters().remove(this._frameSyncId);
-        this._frameSyncId = 0;
-      }
+      this._stopFrameSync();
     });
 
     this._teardownStep('settingsSignals', () => {
